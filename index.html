@@ -2,37 +2,72 @@
 <html lang="en">
 <head>
   <meta charset='utf-8'>
-  <title>Example Specification</title>
+  <title>Encrypted Collections for Wallet Attached Storage</title>
   <script src='https://www.w3.org/Tools/respec/respec-w3c' async class='remove'></script>
   <script class='remove'>
     // All config options at https://respec.org/docs/
     var respecConfig = {
       specStatus: "unofficial",
+      latestVersion: "https://interop-alliance.github.io/encrypted-collections-spec/",
+      editors: [{ name: "Dmitri Zagidulin", url: "https://interopalliance.org" }],
       github: {
         branch: "main",
-        repoURL: "https://github.com/swicg/specification-template",
+        repoURL: "https://github.com/interop-alliance/encrypted-collections-spec",
       },
-      includePermalinks: false
+      includePermalinks: false,
+      xref: ["did-core"],
+      localBiblio: {
+        "WAS": {
+          title: "Wallet Attached Storage",
+          href: "https://w3c-ccg.github.io/wallet-attached-storage-spec/",
+          authors: ["Dmitri Zagidulin"],
+          publisher: "W3C Credentials Community Group"
+        },
+        "APP-CONNECT": {
+          title: "App Connect for Wallet Attached Storage",
+          href: "https://interop-alliance.github.io/app-connect-spec/",
+          authors: ["Dmitri Zagidulin"],
+          publisher: "W3C Credentials Community Group (proposed work item)"
+        },
+        "DID-KEY": {
+          title: "The did:key Method",
+          href: "https://w3c-ccg.github.io/did-key-spec/",
+          publisher: "W3C Credentials Community Group"
+        },
+        "EDV": {
+          title: "Encrypted Data Vaults",
+          href: "https://identity.foundation/edv-spec/",
+          publisher: "Decentralized Identity Foundation"
+        }
+      }
     };
     </script>
 </head>
 <body>
-<h1 id="title">Example Specification</h1>
+<h1 id="title">Encrypted Collections for Wallet Attached Storage v0.1</h1>
 <section id='abstract'>
   <p>
-    Abstract Goes here.
+    A client-side profile defining end-to-end encrypted Collections over
+    Wallet Attached Storage (WAS): the encryption descriptor with its
+    key-epoch roster, carried from the collection's creation; the Encrypted
+    Data Vault envelope format with its AEAD-bound <code>was</code> integrity
+    binding; epoch-configuration authentication; recipient management by
+    escrow and rotate-first removal; and the deferred-minting rules for
+    local-first writers. The storage server needs nothing beyond WAS and
+    never holds key material.
   </p>
 </section>
-<section id='sotd'>
+<section id="sotd">
   <p>
     This is an experimental specification and is undergoing regular revisions.
   </p>
 </section>
 
-<div data-include="spec.md" data-include-format="markdown" data-include-replace="true"></div>
-
-<section id='conformance'>
+<section id="conformance">
   <!-- This section is filled automatically by ReSpec. -->
 </section>
+
+<div data-include="spec.md" data-include-format="markdown" data-include-replace="true"></div>
+
 </body>
 </html>
