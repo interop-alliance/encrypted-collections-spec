@@ -2,32 +2,71 @@
 
 This document defines the Encrypted Collections profile for Wallet Attached
 Storage ([[WAS]]): the client-side construction by which a WAS
-[=collection=]'s contents are end-to-end encrypted under rotatable key epochs,
+[collection](https://w3c-ccg.github.io/wallet-attached-storage-spec/#dfn-collections)'s
+contents are end-to-end encrypted under rotatable key epochs,
 so that several readers can hold per-reader keys, reader removal has a
 cryptographic meaning, and a storage server never holds key material.
 
 The profile is a client-side convention layered on the WAS storage substrate.
 A conforming WAS server needs nothing beyond the features it already
 advertises: it stores opaque envelopes, validates their non-secret shape
-(the `edv` scheme of the WAS Encryption Scheme Registry), and serves the
+(the `edv` scheme of the WAS [Encryption Scheme
+Registry](https://w3c-ccg.github.io/wallet-attached-storage-spec/#encryption-scheme-registry)),
+and serves the
 non-secret descriptor and epoch stamps. Every normative requirement in this
 profile therefore binds clients -- writers and readers of encrypted
 collections -- except where a requirement is explicitly identified as the
 server-visible half defined by [[WAS]].
 
-| Specification | Relationship |
-|---------------|--------------|
-| [[WAS]] | The storage substrate: Spaces, Collections, Resources, the `encryption` descriptor slot, the Encryption Scheme Registry's `edv` envelope validation, conditional writes, the `changes` feed. This profile's server-visible halves (descriptor shape rails, the epoch stamp surfaces) are defined there. |
-| [[APP-CONNECT]] | The companion profile by which an application obtains capabilities into a wallet's Space. It defers to this profile for the encrypted-collection construction: the epoch roster, the envelope format, recipient-key derivation, and the definition of an epoch-roster recipient. Its Resource Log Profile defines the log form of the resources this profile shapes ([[[#log-form]]]). |
-| [Encrypted Data Vaults](https://identity.foundation/edv-spec/) | The envelope vocabulary: the Encrypted Document shape, the JWE recipients structure, and the blinded-index model this profile's envelopes reuse verbatim. |
+| Specification                                                  | Relationship                                                                                                                                                                                                                                                                                                                                                                           |
+|----------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| [[WAS]]                                                        | The storage substrate: Spaces, Collections, Resources, the `encryption` descriptor slot, the Encryption Scheme Registry's `edv` envelope validation, conditional writes, the `changes` feed. This profile's server-visible halves ([descriptor shape rails](https://w3c-ccg.github.io/wallet-attached-storage-spec/#epoch-data-model), the epoch stamp surfaces) are defined there.                                                                                |
+| [[APP-CONNECT]]                                                | The companion profile by which an application obtains capabilities into a wallet's Space. It defers to this profile for the encrypted-collection construction: the epoch roster, the envelope format, recipient-key derivation, and the definition of an epoch-roster recipient. Its Resource Log Profile defines the log form of the resources this profile shapes ([[[#log-form]]]). |
+| [Encrypted Data Vaults](https://identity.foundation/edv-spec/) | The envelope vocabulary: the Encrypted Document shape, the JWE recipients structure, and the blinded-index model this profile's envelopes reuse verbatim.                                                                                                                                                                                                                              |
+
+### Key epochs and eras {#epochs-and-eras}
+
+A [=key epoch=] is one generation of a collection's encryption key. Rather
+than encrypting every resource in a collection under a single long-lived key,
+this profile encrypts each resource under the key of whichever epoch was
+current when the resource was written. The collection's descriptor carries
+the full roster of epochs (an append-only history), and each epoch records
+which [=recipients=] hold a wrap of that epoch's secret.
+
+Informally: you can think of the [=current epoch=] as "the set of keys,
+held by clients and people, that can decrypt what is written to this
+collection today". Each earlier epoch is the same answer for an earlier
+stretch of the collection's history, so the epoch roster as a whole reads
+as the collection's access history.
+
+Epochs are what give key rotation and reader removal their meaning:
+
+* Rotating a collection's key means appending a new epoch, not re-encrypting
+  history. Resources written earlier remain sealed under the epochs of their
+  writing; new writes seal under the new [=current epoch=].
+* Removing a reader means omitting them from the new epoch's recipients.
+  They cryptographically lose access to everything written from that epoch
+  onward, while their access to earlier epochs is unchanged: ciphertext
+  they could once decrypt is not retroactively protected from them by a
+  key change alone.
+
+An <dfn data-lt="eras">era</dfn>, by contrast, is not a per-collection
+concept but a design regime: a span of the profile's life during which
+stored artifacts follow one key-management construction, such that a reader
+would need era-specific logic to tell which construction a given artifact
+uses. Multiple eras force every future reader to carry branches for every
+past construction -- and each branch is a downgrade surface. This profile
+avoids that cost outright by having exactly one era, as the next section
+defines.
 
 ### The single epoch era {#single-epoch-era}
 
-This profile has exactly one era. An encrypted collection's descriptor
+This profile has exactly one [=era=]. An encrypted collection's
+[descriptor](https://w3c-ccg.github.io/wallet-attached-storage-spec/#collection-data-model)
 carries a key-epoch roster from the moment the collection exists, and every
 envelope seals to an epoch key and binds the epoch it sealed under. There is
-no descriptor-less era, no epoch-less envelope, and consequently no legacy
-tolerance anywhere in the profile:
+no descriptor-less era, no epoch-less envelope, and consequently no
+acceptance branch for either anywhere in the profile:
 
 * A descriptor declaring the `edv` scheme without an epoch roster is
   non-conforming ([[[#epoch-less-descriptor]]]).
@@ -36,27 +75,14 @@ tolerance anywhere in the profile:
 * A reader's own key-agreement key is never a decryption candidate; reads
   route through resolved epoch keys only ([[[#reads]]]).
 
-<div class="note">
-An earlier pre-release design had two eras: a single-key era, in which a bare
-`{ "scheme": "edv" }` descriptor meant envelopes sealed directly to the
-owner's key-agreement key, followed by an epoch era once the first share or
-rotation installed a roster. That design required a permanent reader
-tolerance for descriptor-less-era envelopes and a "no `was` member means a
-legacy envelope, accept it" carve-out in binding verification. The era split
-was eliminated before any production deployment existed, so those carve-outs
-are deleted from this profile rather than deprecated: no conforming artifact
-they would describe has ever been stored, and a reader MUST NOT implement
-them. Their absence is what makes the binding checks of [[[#was-binding]]]
-unconditional -- there is no downgrade path for a tampering server to steer
-a reader onto.
-</div>
-
 ## Terminology {#terminology}
 
 <dl class="termlist definitions" data-sort="ascending">
   <dt><dfn data-lt="encrypted collections|encrypted">encrypted
   collection</dfn></dt>
-  <dd>A WAS [=collection=] whose Collection Description declares the `edv`
+  <dd>A WAS
+  [collection](https://w3c-ccg.github.io/wallet-attached-storage-spec/#dfn-collections)
+  whose Collection Description declares the `edv`
   encryption scheme and whose resources are stored as [=envelopes=]. Its
   descriptor carries an epoch roster from creation
   ([[[#single-epoch-era]]]).</dd>
@@ -65,7 +91,7 @@ a reader onto.
   descriptor</dfn></dt>
   <dd>The non-secret `encryption` member of a collection's Collection
   Description: the scheme, the scheme version, the epoch roster, and the
-  integrity members over them ([[[#descriptor]]]).</dd>
+  integrity member over them ([[[#descriptor]]]).</dd>
 
   <dt><dfn data-lt="epoch|epochs|key epochs">key epoch</dfn></dt>
   <dd>One generation of a collection's encryption key. Each epoch wraps its
@@ -73,15 +99,17 @@ a reader onto.
   rather than re-encrypting history.</dd>
 
   <dt><dfn data-lt="epoch keys">epoch key</dfn></dt>
-  <dd>The X25519 key-agreement key pair derived from an epoch's
+  <dd>An X25519 [[RFC7748]] key-agreement key pair derived from an epoch's
   [=epoch secret=]. Envelopes written under the epoch name it as their sole
   JWE recipient.</dd>
 
   <dt><dfn data-lt="epoch secrets">epoch secret</dfn></dt>
-  <dd>The fresh 32-byte secret that seeds an epoch's [=epoch key=] and keys
-  the epoch-configuration MAC ([[[#epochs-mac]]]). Freshly generated per
-  epoch, never derived from or equal to any longer-lived key
-  ([[[#first-epoch]]]).</dd>
+  <dd>The fresh 32-byte symmetric secret shared by an epoch's
+  [=recipients=]. It never encrypts content directly: it seeds the epoch's
+  [=epoch key=] (a holder reconstructs the full key pair, and with it both
+  encrypts and decrypts under the epoch) and keys the epoch-configuration
+  MAC ([[[#epochs-mac]]]). Freshly generated per epoch, never derived from
+  or equal to any longer-lived key ([[[#first-epoch]]]).</dd>
 
   <dt><dfn>current epoch</dfn></dt>
   <dd>The epoch named by the descriptor's `currentEpoch` member: the one new
@@ -90,17 +118,23 @@ a reader onto.
   <dt><dfn>epoch configuration</dfn></dt>
   <dd>The authenticated core of a descriptor: its `scheme`, `version`,
   `currentEpoch`, and the ordered list of epoch ids -- the exact input of the
-  `epochsMac` and `epochsSig` constructions ([[[#epoch-integrity]]]).</dd>
+  `epochsMac` construction ([[[#epoch-integrity]]]).
+  The integrity of these properties is cryptographically protected, so that
+  server-side tampering with them is detectable.
+  </dd>
 
   <dt><dfn data-lt="recipient|recipients|epoch-roster recipients">epoch-roster recipient</dfn></dt>
-  <dd>A party holding a wrap of an epoch's secret to its own key-agreement
-  key: an entry in that epoch's `recipients` array. Recipiency is the read
+  <dd>A party, identified by the `kid` of its own [=key-agreement key=],
+  holding a wrap of an epoch's secret to that key: an entry in that epoch's
+  `recipients` array. Recipiency is the read
   (decrypt) axis of an encrypted collection, distinct from the fetch axis a
   WAS capability governs.</dd>
 
   <dt><dfn data-lt="envelopes">envelope</dfn></dt>
   <dd>The stored form of a resource in an encrypted collection: an Encrypted
-  Data Vault Encrypted Document whose `jwe` seals the plaintext to an
+  Data Vault [Encrypted
+  Document](https://identity.foundation/edv-spec/#dfn-encrypteddocument)
+  [[EDV]] whose `jwe` seals the plaintext to an
   [=epoch key=] and binds the `was` protected-header parameter
   ([[[#envelope]]]).</dd>
 
@@ -110,15 +144,19 @@ a reader onto.
   ([[[#single-epoch-era]]]).</dd>
 
   <dt><dfn data-lt="collection owner">owner</dfn></dt>
-  <dd>The controller of the Space a collection lives in. Always a
+  <dd>The controller of the [=Space=] a [=collection=] lives in. Always a
   [=recipient=] of every encrypted collection in their own Space; any
   departure is an explicit consent surface, never a silent default.</dd>
 
   <dt><dfn data-lt="collections">collection</dfn></dt>
-  <dd>A WAS Collection, per [[WAS]].</dd>
+  <dd>A WAS
+  [Collection](https://w3c-ccg.github.io/wallet-attached-storage-spec/#dfn-collections)
+  [[WAS]].</dd>
 
   <dt><dfn data-lt="Spaces">Space</dfn></dt>
-  <dd>A WAS Space, per [[WAS]].</dd>
+  <dd>A WAS
+  [Space](https://w3c-ccg.github.io/wallet-attached-storage-spec/#spaces)
+  [[WAS]].</dd>
 </dl>
 
 ## The encryption descriptor {#descriptor}
@@ -132,24 +170,25 @@ state of a conforming descriptor in which any of them is absent.
 
 * `scheme` (REQUIRED) - The string `edv`.
 * `version` (OPTIONAL) - The positive-integer version of the `edv` envelope
-  wire format, per the WAS Encryption Scheme Registry. An absent `version`
-  means `1`. This document describes version `1`.
+  wire format, per the WAS [Encryption Scheme
+  Registry](https://w3c-ccg.github.io/wallet-attached-storage-spec/#encryption-scheme-registry).
+  An absent `version` means `1`. This document describes version `1`.
 * `epochs` (REQUIRED) - A non-empty array of epoch entries
   ([[[#epoch-entry]]]), append-only across the descriptor's life.
 * `currentEpoch` (REQUIRED) - The `id` of the epoch new writes encrypt
   under. MUST name an entry in `epochs` and never moves to an older epoch.
 * `epochsMac` (REQUIRED) - The epoch-configuration MAC
   ([[[#epochs-mac]]]).
-* `epochsSig` (OPTIONAL) - A detached signature over the same epoch
-  configuration by a key the deployment's trust model can resolve
-  ([[[#epochs-sig]]]).
 
 The descriptor's `scheme` and `version` are set-once for the life of the
 collection, and a descriptor MUST NOT be combined with a server-side
-`indexes` declaration -- both per [[WAS]], whose Collection Data Model and
-Encryption Scheme Registry define the server-visible rails over these
-members (shape validation, `epochs` append-only enforcement, `currentEpoch`
-monotonicity, and the structural fail-closed rejection of plaintext writes).
+`indexes` declaration -- both per [[WAS]], whose [Epoch data
+model](https://w3c-ccg.github.io/wallet-attached-storage-spec/#epoch-data-model)
+and
+[Encryption Scheme Registry](https://w3c-ccg.github.io/wallet-attached-storage-spec/#encryption-scheme-registry)
+define the server-visible rails over these members (shape validation, `epochs`
+append-only enforcement, `currentEpoch` monotonicity, and the structural
+fail-closed rejection of plaintext writes).
 
 ### The first epoch {#first-epoch}
 
@@ -206,7 +245,7 @@ does not describe a state this profile admits. A client encountering one:
 
 * MUST NOT construct a cipher for the collection -- in particular it MUST
   NOT fall back to sealing envelopes directly to any reader's
-  key-agreement key, which is the deleted single-key construction;
+  key-agreement key;
 * MUST treat the state as a torn provisioning to repair by re-running the
   first-epoch install ([[[#first-epoch]]]), or as a served-descriptor
   integrity failure, whichever its role implies;
@@ -256,13 +295,15 @@ Serialization recipient shape ([[RFC7516]] section 7.2) verbatim:
   * `kid` (REQUIRED) - The recipient's key-agreement key id.
   * `alg` (REQUIRED) - `ECDH-ES+A256KW`.
   * `epk`, `apu`, `apv` - The ephemeral public key (`{ "kty": "OKP",
-    "crv": "X25519", "x": ... }`) and the agreement info of the wrap:
+    "crv": "X25519", "x": ... }` [[RFC8037]]) and the agreement info of
+    the wrap:
     `apu` is the unpadded base64url ephemeral public key, `apv` the
     unpadded base64url UTF-8 of the recipient's `kid` (all base64url in
     the entry, `x` and `encrypted_key` included, is unpadded).
 * `encrypted_key` (REQUIRED) - The wrapped payload: the raw 32-byte
   [=epoch secret=], key-wrapped to the recipient's key-agreement key
-  (ephemeral-static ECDH, the [[RFC7518]] Concat KDF, AES key wrap).
+  (ephemeral-static ECDH, the [[RFC7518]] Concat KDF, [[RFC3394]] AES
+  key wrap).
 
 Nothing secret appears in the descriptor: recipient entries hold public
 key identifiers and wrapped-key ciphertext only. The server never holds
@@ -303,8 +344,8 @@ retries, bounded.
 
 A descriptor hosted by a storage server gets its shape rails from the
 server, but shape rails cannot stop a malicious host from serving a
-fabricated or rolled-back epoch configuration. Two client-side members
-close that gap.
+fabricated or rolled-back epoch configuration. A client-side member
+closes that gap.
 
 ### `epochsMac` {#epochs-mac}
 
@@ -314,7 +355,8 @@ configuration the current recipients did not write fails to authenticate.
 
 The construction, all values exact:
 
-* The MAC key is `HKDF-SHA-256(ikm = the 32-byte current epoch secret,
+* The MAC key is derived with HKDF-SHA-256 [[RFC5869]]:
+  `HKDF(ikm = the 32-byte current epoch secret,
   salt = empty (zero-length), info = UTF8("was-epoch-config-mac/v1"),
   length = 32 bytes)`.
 * The payload is `UTF8("was-epoch-config/v1." + configJson)`, where
@@ -326,7 +368,7 @@ The construction, all values exact:
   recipient, which cannot be forged without the epoch secret anyway, does
   not invalidate the MAC).
 * The member is `{ "v": 1, "alg": "HS256", "mac": ... }`, with `mac` the
-  base64url (unpadded) HMAC-SHA-256 tag over the payload.
+  base64url (unpadded) HMAC-SHA-256 [[RFC2104]] tag over the payload.
 
 A writer MUST compute `epochsMac` over the exact descriptor state being
 written, on every write that changes the epoch configuration (the
@@ -341,38 +383,16 @@ therefore cannot verify; such a reader is a removed or archive reader
 whose writes the server rejects via its revoked capability anyway.
 
 <div class="note">
-The MAC's honest limitation: a server can replay an entire prior
+The MAC's limitations: a server can replay an entire prior
 consistent configuration -- an old epoch list together with its matching
-old MAC. Detecting that requires client-side monotonic state (an epoch or
-head pin) or the log form of the descriptor ([[[#log-form]]]), whose hash
-chain makes any rollback a chain break.
+old MAC -- and a host that mints its own epoch can MAC its minted
+configuration under its minted secret. Detecting the replay requires
+client-side monotonic state (an epoch or head pin) or the log form of
+the descriptor ([[[#log-form]]]), whose hash chain makes any rollback a
+chain break. Establishing authorship -- that a configuration was written
+by a writer the deployment's root of trust vouches for, not minted by
+the host -- is the job of the log form's entry proof.
 </div>
-
-### `epochsSig` {#epochs-sig}
-
-The MAC authenticates the configuration to parties who hold the current
-epoch secret -- but a host that mints its own epoch can MAC its minted
-configuration under its minted secret. Where the deployment has a root of
-trust that can vouch for writers (for example, an account document listing
-enrolled client keys), the descriptor SHOULD additionally carry
-`epochsSig`: a detached signature over the same epoch configuration by a
-key that root of trust resolves.
-
-* The signed payload is `UTF8("was-epoch-config-sig/v1." + configJson)`,
-  with `configJson` exactly as in [[[#epochs-mac]]] -- the same
-  configuration under its own domain-separation prefix, so a signature can
-  never be replayed as a MAC input or vice versa.
-* The member is `{ "v": ..., "alg": ..., "kid": ..., "sig": ... }`: the
-  construction version (`1` in this document), the signing suite, the
-  signing key's id, and the signature. The signing key, and the trust
-  model its `kid` is resolved against, are the referencing deployment's;
-  this profile defines only the payload and the member shape.
-* A reader adopting an epoch configuration it did not itself vouch for
-  SHOULD verify `epochsSig` against its deployment's root of trust before
-  adopting.
-
-In the log form of the descriptor, the log entry's own proof plays this
-role and `epochsSig` is not carried ([[[#log-form]]]).
 
 ## The envelope {#envelope}
 
@@ -402,11 +422,13 @@ an epoch key ([[[#single-epoch-era]]]).
 
 ### Algorithms {#algorithms}
 
-* Key agreement and wrap: `ECDH-ES+A256KW` only, with the [[RFC7518]]
-  Concat KDF (SHA-256).
-* Content encryption: `XC20P` (XChaCha20-Poly1305) is the profile
-  conforming writers use; readers additionally accept `C20P` and
-  `A256GCM` (the upstream EDV FIPS suite) on decrypt only. A fresh
+* Key agreement and wrap: `ECDH-ES+A256KW` only, over X25519 [[RFC8037]],
+  with the [[RFC7518]] Concat KDF (SHA-256).
+* Content encryption: `XC20P` (XChaCha20-Poly1305 [[XCHACHA]], the
+  extended-nonce variant of [[RFC8439]]) is the profile
+  conforming writers use; readers additionally accept `C20P` [[RFC8439]]
+  and `A256GCM` [[RFC7518]] (the upstream EDV FIPS suite) on decrypt
+  only. A fresh
   content-encryption
   key is generated per envelope, so envelope bytes are nondeterministic
   across re-encryptions of identical plaintext -- deduplication keys on
@@ -416,7 +438,8 @@ an epoch key ([[[#single-epoch-era]]]).
 
 An immutable (content-addressed) collection derives each resource id from
 the envelope's ciphertext after encryption:
-`"z" + base58btc(0x00 0x10 || first 16 bytes of SHA-256(base64url-decode(jwe.ciphertext)))`.
+`"z" + base58btc(0x00 0x10 || first 16 bytes of SHA-256(base64url-decode(jwe.ciphertext)))`
+(base58btc per [[BASE58]]).
 Because encryption is randomized, the id identifies the stored envelope,
 not the plaintext; two replicas independently encrypting identical
 plaintext produce distinct resource ids, and convergence is defined on
@@ -449,7 +472,7 @@ MUST verify the `was` binding. The checks, in order, all unconditional:
 
 1. A missing `was` parameter is refused: every envelope of this profile
    binds `was` at encrypt time, so its absence means a writer this scheme
-   does not admit. There is no legacy-envelope acceptance
+   does not admit. There is no unbound-envelope acceptance
    ([[[#single-epoch-era]]]).
 2. A `was.v` greater than the scheme version the reader implements is
    refused: a future-scheme envelope this reader does not understand.
@@ -529,8 +552,8 @@ capability (fetch axis) status.
 
 ## Deferred minting {#deferred-minting}
 
-The single epoch era implies one obligation on writers that the two-era
-design did not state: no envelope exists before its collection's
+The single epoch era implies one obligation on writers: no envelope
+exists before its collection's
 descriptor is known. A writer MUST NOT mint an envelope for a collection
 whose epoch-bearing descriptor it does not hold -- there is nothing
 conforming to seal to.
@@ -553,7 +576,7 @@ invariant: no envelope ever reaches the collection sealed under an epoch
 the published descriptor does not carry.
 
 <div class="note">
-The honest residue of "no envelope before the descriptor" is a reconnect
+One consequence of "no envelope before the descriptor" is a reconnect
 asymmetry. A writer holding a cached descriptor for a collection can mint
 offline and push the moment connectivity returns; a writer without one
 (a collection it has never synced, or a cache lost to storage clearing)
@@ -566,8 +589,7 @@ invisible to the local writer.
 ## Point state and log form {#log-form}
 
 An [=encryption descriptor=] as defined above is point state: the current
-configuration, served whole, with `epochsMac` / `epochsSig` as its
-integrity members. The companion App Connect profile defines a Resource
+configuration, served whole, with `epochsMac` as its integrity member. The companion App Connect profile defines a Resource
 Log Profile ([[APP-CONNECT]]) under which the same resources are governed
 as hash-linked logs of full-state entries, each entry proof-carrying and
 externally authorized -- and encryption descriptors are among its
@@ -587,14 +609,14 @@ Under the log form:
   succession of whole configurations -- so "epochs is append-only" and
   "currentEpoch never moves backwards" become verifiable claims over the
   entry chain rather than server-enforced rails.
-* The entry proof subsumes `epochsSig`: authorship of a configuration is
-  established by the entry's Data Integrity proof, verified against the
-  deployment's root of trust per the Resource Log Profile's
-  external-authorization rule, and `epochsSig` is not carried in log
-  `state`. `epochsMac` remains meaningful in both framings (it
-  authenticates to secret-holders even when no proof-verifying resolver
-  is at hand), as does its replay limitation -- which the log's hash
-  chain and head pin close ([[[#epochs-mac]]]).
+* Authorship of a configuration is established by the entry's Data
+  Integrity proof, verified against the deployment's root of trust per
+  the Resource Log Profile's external-authorization rule -- the log form
+  is what closes the minted-configuration limitation of the MAC
+  ([[[#epochs-mac]]]). `epochsMac` remains meaningful in both framings
+  (it authenticates to secret-holders even when no proof-verifying
+  resolver is at hand), as does its replay limitation -- which the log's
+  hash chain and head pin close.
 * A point-state descriptor served beside a log is a projection bound to
   the log per the Resource Log Profile: a verifying consumer acts only on
   a projection equal to the verified head's `state`.
@@ -622,7 +644,7 @@ Reserved. This section will define the account-level user-key roster: a
 current epoch delivers the account's user key wrapped once per enrolled
 client -- a delivery channel, never a source of authority -- together
 with its epoch pin and document-backed recipient resolution rules. The
-epoch-configuration integrity members ([[[#epoch-integrity]]]) and the
+epoch-configuration integrity member ([[[#epoch-integrity]]]) and the
 log form ([[[#log-form]]]) apply to it unchanged.
 </div>
 
@@ -638,7 +660,7 @@ registered value orphans every artifact derived under it.
 
 ## Security considerations {#security-considerations}
 
-### The honest ceiling of rotation {#honest-ceiling}
+### The limitations of rotation {#rotation-limitations}
 
 Epoch rotation protects resources written after the rotation, and nothing
 else. It never claws back data a removed reader already fetched;
@@ -648,8 +670,8 @@ feed pull made before revocation); and it provides no post-compromise
 security for the removed reader's past traffic. Closing those gaps
 requires re-encrypting the collection under the new epoch -- a
 client-side bulk rewrite outside this profile. Documentation and
-libraries built on this profile MUST state this ceiling rather than imply
-stronger guarantees.
+libraries built on this profile MUST state these limitations rather than
+imply stronger guarantees.
 
 ### Fetch and decrypt are separate axes {#two-axes}
 
@@ -663,12 +685,10 @@ error messages should never conflate them.
 
 Because the binding checks of [[[#binding-verification]]] are
 unconditional and the profile admits no descriptor-less or epoch-less
-state, a tampering server has no legacy path to steer a reader onto: it
+state, a tampering server has no fallback path to steer a reader onto: it
 cannot serve a stripped descriptor to induce direct-to-key sealing
 ([[[#epoch-less-descriptor]]]), and it cannot serve an unbound envelope
-and have it accepted. The deleted carve-outs of the pre-release two-era
-design were exactly such surfaces, which is why they are deleted rather
-than tolerated ([[[#single-epoch-era]]]).
+and have it accepted.
 
 ### Rotation is feed-invisible {#rotation-feed}
 

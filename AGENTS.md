@@ -5,9 +5,8 @@ CCG-style document authored in **ReSpec + Markdown**. It defines the
 client-side encrypted-collection construction over Wallet Attached Storage:
 the encryption descriptor with its key-epoch roster (carried from the
 collection's creation -- the single epoch era), the EDV envelope format with
-the AEAD-bound `was` binding, epoch-configuration integrity (`epochsMac` /
-`epochsSig`), recipient management, and deferred minting for local-first
-writers.
+the AEAD-bound `was` binding, epoch-configuration integrity (`epochsMac`),
+recipient management, and deferred minting for local-first writers.
 
 This is a **companion spec layered on top of [WAS]** (which owns the storage
 model, HTTP API, and the server-visible halves: descriptor shape rails and
@@ -62,15 +61,16 @@ Match the existing style (same conventions as the app-connect-spec repo):
 ## Design invariants (so edits stay consistent)
 
 - **The single epoch era.** One era only: descriptors carry epochs from
-  creation, every envelope binds `was.epoch`, and the pre-release two-era
-  carve-outs (descriptor-less reader tolerance, "no `was` = legacy") are
-  deleted, not deprecated. Do not reintroduce a legacy branch anywhere.
+  creation and every envelope binds `was.epoch`. Never introduce a
+  legacy/fallback branch anywhere (no descriptor-less reader tolerance, no
+  "missing `was` means accept it"). The spec deliberately contains no
+  historical asides; do not add any.
 - **Byte-level values are permanent.** The epoch-MAC HKDF info
-  (`was-epoch-config-mac/v1`), the MAC and sig payload prefixes
-  (`was-epoch-config/v1.` / `was-epoch-config-sig/v1.`), the fixed member
-  order of the config JSON, and every value in the (reserved) pinned-inputs
-  registry are baked into stored artifacts. Verify against code before
-  changing a single character.
+  (`was-epoch-config-mac/v1`), the MAC payload prefix
+  (`was-epoch-config/v1.`), the fixed member order of the config JSON, and
+  every value in the (reserved) pinned-inputs registry are baked into
+  stored artifacts. Verify against code before changing a single
+  character.
 - **Altitude rule:** state invariants, not current implementations ("the
   owner is always a recipient", never "recipient zero is the vault KAK").
 - **Fail-closed extensibility** throughout: anything unrecognized is
