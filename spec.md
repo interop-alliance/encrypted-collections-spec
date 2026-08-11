@@ -501,7 +501,7 @@ error taxonomy and MUST NOT mask either as a routine decryption miss.
 * A write MUST encrypt under the descriptor's `currentEpoch` and bind it
   as `was.epoch`.
 * A content write SHOULD declare its epoch to the server (the
-  `WAS-Key-Epoch` request header, per [[WAS]]), so listings and the `changes` feed can
+  `Key-Epoch` request header, per [[WAS]]), so listings and the `changes` feed can
   serve the epoch stamp and a replicating reader can select its key
   before fetching the envelope. The server-served stamp is advisory
   routing metadata; the authoritative binding is the envelope's own
