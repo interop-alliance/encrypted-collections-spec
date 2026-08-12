@@ -78,6 +78,26 @@ Match the existing style (same conventions as the app-connect-spec repo):
 - Wallet terminology: follow the global `clientId` / `writerId` rules --
   never "device" for either concept.
 
+## Parties to this contract
+
+Every repo that implements or consumes this profile, with the specific
+modules that speak it. **The maintenance rule: a normative change's checklist
+is a walk of this table** -- for each row, resolve the impact as shipped
+(naming what landed, including the row's ARCHITECTURE/AGENTS docs) or
+explicitly waived (`unaffected: <repo> (<why>)`). A breaking change to the
+construction is named as such in each implementing package's CHANGELOG.
+
+| Repo | Modules speaking the contract |
+| --- | --- |
+| storage-core | The wire types (`CollectionEncryption` and friends). |
+| was-client | `src/edv/` is the reference implementation: the EDV envelope codec, epoch construction and MAC (`epochCrypto`, `epochMac`, `epochKeys`), recipient operations, `x25519RecipientFromDidKey`, and the descriptor-store seam. |
+| wallet-core | `/keys` (the user-key wrap-set roster stores a `CollectionEncryption` descriptor verbatim), the ceremonies that rotate epochs (`/clients`, `/recovery`). |
+| freewallet | Per-collection document ciphers over the local replica and remote-direct backends, app-provisioned collection encryption, share grants (`StorageManager.shareCollection`). |
+| dcw (private) | The mobile wallet's document cipher and sync-side epoch handling, over the same was-client/wallet-core modules. |
+| was-react | `SharedCollectionReader` and `createDocCipher` (epoch-aware reads as a grantee); its `test/node/sharedCollection.test.ts` exercises the real was-client `/edv` roster operations and recipient derivation. |
+| was-teaching-server | The server-visible halves: descriptor shape rails and the `Key-Epoch` stamp surfaces. |
+| was-conformance-suite | `encryption-descriptor-api` and the key-epoch checks in `client-spaces` validate the server-visible halves. |
+
 ## Reference material (read-only, outside this repo)
 
 These are separate repositories. Ground spec prose against real behavior --
