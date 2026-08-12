@@ -90,8 +90,8 @@ acceptance branch for either anywhere in the profile:
   <dt><dfn data-lt="descriptor|encryption descriptors">encryption
   descriptor</dfn></dt>
   <dd>The non-secret `encryption` member of a collection's Collection
-  Description: the scheme, the scheme version, the epoch roster, and the
-  integrity member over them ([[[#descriptor]]]).</dd>
+  Description: the scheme, the scheme version, and the epoch roster
+  ([[[#descriptor]]]).</dd>
 
   <dt><dfn data-lt="epoch|epochs|key epochs">key epoch</dfn></dt>
   <dd>One generation of a collection's encryption key. Each epoch wraps its
@@ -107,20 +107,18 @@ acceptance branch for either anywhere in the profile:
   <dd>The fresh 32-byte symmetric secret shared by an epoch's
   [=recipients=]. It never encrypts content directly: it seeds the epoch's
   [=epoch key=] (a holder reconstructs the full key pair, and with it both
-  encrypts and decrypts under the epoch) and keys the epoch-configuration
-  MAC ([[[#epochs-mac]]]). Freshly generated per epoch, never derived from
-  or equal to any longer-lived key ([[[#first-epoch]]]).</dd>
+  encrypts and decrypts under the epoch). Freshly generated per epoch,
+  never derived from or equal to any longer-lived key
+  ([[[#first-epoch]]]).</dd>
 
   <dt><dfn>current epoch</dfn></dt>
   <dd>The epoch named by the descriptor's `currentEpoch` member: the one new
   writes encrypt under.</dd>
 
   <dt><dfn>epoch configuration</dfn></dt>
-  <dd>The authenticated core of a descriptor: its `scheme`, `version`,
-  `currentEpoch`, and the ordered list of epoch ids -- the exact input of the
-  `epochsMac` construction ([[[#epoch-integrity]]]).
-  The integrity of these properties is cryptographically protected, so that
-  server-side tampering with them is detectable.
+  <dd>The core of a descriptor: its `scheme`, `version`, `currentEpoch`,
+  and the ordered list of epoch ids. Its integrity against a tampering
+  host is the subject of [[[#epoch-integrity]]].
   </dd>
 
   <dt><dfn data-lt="recipient|recipients|epoch-roster recipients">epoch-roster recipient</dfn></dt>
@@ -164,9 +162,9 @@ acceptance branch for either anywhere in the profile:
 ### Members {#descriptor-members}
 
 An [=encrypted collection=]'s [=encryption descriptor=] is a JSON object with
-the following members. All of `scheme`, `epochs`, `currentEpoch`, and
-`epochsMac` are REQUIRED from the descriptor's creation onward; there is no
-state of a conforming descriptor in which any of them is absent.
+the following members. All of `scheme`, `epochs`, and `currentEpoch` are
+REQUIRED from the descriptor's creation onward; there is no state of a
+conforming descriptor in which any of them is absent.
 
 * `scheme` (REQUIRED) - The string `edv`.
 * `version` (OPTIONAL) - The positive-integer version of the `edv` envelope
@@ -177,8 +175,6 @@ state of a conforming descriptor in which any of them is absent.
   ([[[#epoch-entry]]]), append-only across the descriptor's life.
 * `currentEpoch` (REQUIRED) - The `id` of the epoch new writes encrypt
   under. MUST name an entry in `epochs` and never moves to an older epoch.
-* `epochsMac` (REQUIRED) - The epoch-configuration MAC
-  ([[[#epochs-mac]]]).
 
 The descriptor's `scheme` and `version` are set-once for the life of the
 collection, and a descriptor MUST NOT be combined with a server-side
@@ -319,13 +315,12 @@ operations:
 * The first-epoch install, defined in [[[#first-epoch]]].
 * Adding a recipient MUST wrap every epoch's secret to it (adding a reader
   admits it to the collection's history -- the escrow decision), MUST be
-  idempotent, and touches neither `currentEpoch` nor `epochsMac` (the MAC
-  deliberately does not cover recipient entries,
-  [[[#epochs-mac]]]).
+  idempotent, and leaves the [=epoch configuration=] untouched (recipient
+  entries are not part of it).
 * Removing a recipient MUST mint a fresh epoch wrapped to each remaining
   recipient of the current epoch (never the union of historical
-  recipients), append it, repoint `currentEpoch`, re-stamp `epochsMac`
-  under the new secret -- and only then revoke the removed reader's
+  recipients), append it, repoint `currentEpoch` -- and only then revoke
+  the removed reader's
   capabilities. Rotate first, then revoke, as one indivisible removal: a
   client library SHOULD NOT expose a rotate-without-revoke or
   revoke-without-rotate spelling of removal.
@@ -344,54 +339,32 @@ retries, bounded.
 
 A descriptor hosted by a storage server gets its shape rails from the
 server, but shape rails cannot stop a malicious host from serving a
-fabricated or rolled-back epoch configuration. A client-side member
-closes that gap.
+fabricated or rolled-back epoch configuration. Two client-side guards
+close that gap, neither of them carried in the descriptor itself:
 
-### `epochsMac` {#epochs-mac}
+* Client-side monotonic state -- an epoch or head pin -- makes a served
+  configuration that rolls back behind the pin refusable
+  ([[[#configuration-replay]]]).
+* The log form of the descriptor ([[[#log-form]]]) makes the whole
+  [=epoch configuration=] proof-carrying: each entry's Data Integrity
+  proof establishes that the configuration was written by a writer the
+  deployment's root of trust vouches for -- so a host-minted
+  configuration fails verification -- and the hash chain with a pinned
+  head makes any rollback a chain break.
 
-The `epochsMac` member authenticates the [=epoch configuration=] under the
-current epoch's secret -- which the server never holds -- so a served
-configuration the current recipients did not write fails to authenticate.
+A deployment on pure point state keeps the server's shape rails
+(append-only `epochs`, monotonic `currentEpoch`) and the pin; only the
+log form additionally establishes authorship against the host itself.
 
-The construction, all values exact:
-
-* The MAC key is derived with HKDF-SHA-256 [[RFC5869]]:
-  `HKDF(ikm = the 32-byte current epoch secret,
-  salt = empty (zero-length), info = UTF8("was-epoch-config-mac/v1"),
-  length = 32 bytes)`.
-* The payload is `UTF8("was-epoch-config/v1." + configJson)`, where
-  `configJson` is the JSON serialization of
-  `{ "scheme": ..., "version": ..., "currentEpoch": ..., "epochs": [...] }`
-  with exactly that member order, `version` normalized to `null` when
-  absent, and `epochs` the ordered array of epoch `id` strings (ids only
-  -- recipient entries are deliberately not covered, so adding a
-  recipient, which cannot be forged without the epoch secret anyway, does
-  not invalidate the MAC).
-* The member is `{ "v": 1, "alg": "HS256", "mac": ... }`, with `mac` the
-  base64url (unpadded) HMAC-SHA-256 [[RFC2104]] tag over the payload.
-
-A writer MUST compute `epochsMac` over the exact descriptor state being
-written, on every write that changes the epoch configuration (the
-first-epoch install and every rotation).
-
-A reader whose write epoch is the descriptor's `currentEpoch` MUST verify
-`epochsMac` before trusting the configuration, refusing a mismatch -- or a
-declared construction other than `v: 1` / `alg: "HS256"` -- as a
-server-side rollback or tamper. A reader whose write epoch is an older
-held epoch cannot key the MAC (its secret is not the current epoch's) and
-therefore cannot verify; such a reader is a removed or archive reader
-whose writes the server rejects via its revoked capability anyway.
-
-<div class="note">
-The MAC's limitations: a server can replay an entire prior
-consistent configuration -- an old epoch list together with its matching
-old MAC -- and a host that mints its own epoch can MAC its minted
-configuration under its minted secret. Detecting the replay requires
-client-side monotonic state (an epoch or head pin) or the log form of
-the descriptor ([[[#log-form]]]), whose hash chain makes any rollback a
-chain break. Establishing authorship -- that a configuration was written
-by a writer the deployment's root of trust vouches for, not minted by
-the host -- is the job of the log form's entry proof.
+<div class="note" title="The retired epochsMac member">
+An earlier revision of this profile carried a REQUIRED descriptor member,
+`epochsMac`: an HMAC over the epoch configuration, keyed via HKDF from
+the current epoch secret. It has been retired. On a log-governed
+descriptor its coverage is a strict subset of chain verification (the
+entry proof covers the full epoch configuration), and its classic gaps
+-- whole-configuration replay under an old matching MAC, and fresh
+fabrication under a newly minted secret -- were gaps with or without it.
+Conforming descriptors do not carry the member.
 </div>
 
 ## The envelope {#envelope}
@@ -516,7 +489,8 @@ A reader resolves its epoch keys from the descriptor: for each epoch
 whose `recipients` name the reader's [=key-agreement key=], unwrapping
 the [=epoch secret=] and reconstructing the [=epoch key=]. The write
 epoch is `currentEpoch` when the reader holds it, and MUST be unwrapped
-eagerly (arming `epochsMac` verification, [[[#epochs-mac]]]); other held
+eagerly (write readiness: a wrap that fails to unwrap surfaces as its
+typed failure at key resolution, not at the first write); other held
 epochs MAY unwrap lazily on first use. A reader that does not hold
 `currentEpoch` -- a removed or archive reader, whose writes the server
 rejects via its revoked capability anyway -- selects as its write epoch,
@@ -589,7 +563,8 @@ invisible to the local writer.
 ## Point state and log form {#log-form}
 
 An [=encryption descriptor=] as defined above is point state: the current
-configuration, served whole, with `epochsMac` as its integrity member. The companion App Connect profile defines a Resource
+configuration, served whole, its rails enforced by the server. The
+companion App Connect profile defines a Resource
 Log Profile ([[APP-CONNECT]]) under which the same resources are governed
 as hash-linked logs of full-state entries, each entry proof-carrying and
 externally authorized -- and encryption descriptors are among its
@@ -611,12 +586,11 @@ Under the log form:
   entry chain rather than server-enforced rails.
 * Authorship of a configuration is established by the entry's Data
   Integrity proof, verified against the deployment's root of trust per
-  the Resource Log Profile's external-authorization rule -- the log form
-  is what closes the minted-configuration limitation of the MAC
-  ([[[#epochs-mac]]]). `epochsMac` remains meaningful in both framings
-  (it authenticates to secret-holders even when no proof-verifying
-  resolver is at hand), as does its replay limitation -- which the log's
-  hash chain and head pin close.
+  the Resource Log Profile's external-authorization rule; the entry
+  proof covers the full [=epoch configuration=], and the hash chain
+  with a pinned head makes any rollback a chain break -- the log form
+  is what carries this profile's epoch-configuration integrity
+  ([[[#epoch-integrity]]]).
 * A point-state descriptor served beside a log is a projection bound to
   the log per the Resource Log Profile: a verifying consumer acts only on
   a projection equal to the verified head's `state`.
@@ -644,7 +618,7 @@ Reserved. This section will define the account-level user-key roster: a
 current epoch delivers the account's user key wrapped once per enrolled
 client -- a delivery channel, never a source of authority -- together
 with its epoch pin and document-backed recipient resolution rules. The
-epoch-configuration integrity member ([[[#epoch-integrity]]]) and the
+epoch-configuration integrity guards ([[[#epoch-integrity]]]) and the
 log form ([[[#log-form]]]) apply to it unchanged.
 </div>
 
@@ -653,7 +627,7 @@ log form ([[[#log-form]]]) apply to it unchanged.
 <div class="note" title="Reserved section">
 Reserved. This section will register the exact derivation inputs wallet
 implementations of this profile pin permanently (KDF salts and info
-strings, key-name strings, the epoch-MAC labels of [[[#epochs-mac]]]),
+strings, key-name strings),
 each with its value and the artifact class it is baked into. Changing any
 registered value orphans every artifact derived under it.
 </div>
@@ -700,8 +674,10 @@ service.
 
 ### Configuration replay {#configuration-replay}
 
-`epochsMac` cannot detect the replay of an entire prior consistent
-configuration ([[[#epochs-mac]]]). Deployments needing rollback
-protection keep client-side monotonic state (an epoch pin) or adopt the
+A served point-state descriptor carries nothing that lets a client
+detect the replay of an entire prior consistent configuration -- the
+server's rails bind its own storage, not what it chooses to serve.
+Deployments needing rollback protection keep client-side monotonic
+state (an epoch pin) or adopt the
 log form, whose hash chain and pinned head make any rollback a chain
 break ([[[#log-form]]]).

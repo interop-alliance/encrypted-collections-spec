@@ -5,7 +5,8 @@ CCG-style document authored in **ReSpec + Markdown**. It defines the
 client-side encrypted-collection construction over Wallet Attached Storage:
 the encryption descriptor with its key-epoch roster (carried from the
 collection's creation -- the single epoch era), the EDV envelope format with
-the AEAD-bound `was` binding, epoch-configuration integrity (`epochsMac`),
+the AEAD-bound `was` binding, epoch-configuration integrity (the epoch
+pin and the log form),
 recipient management, and deferred minting for local-first writers.
 
 This is a **companion spec layered on top of [WAS]** (which owns the storage
@@ -90,7 +91,7 @@ construction is named as such in each implementing package's CHANGELOG.
 | Repo | Modules speaking the contract |
 | --- | --- |
 | storage-core | The wire types (`CollectionEncryption` and friends). |
-| was-client | `src/edv/` is the reference implementation: the EDV envelope codec, epoch construction and MAC (`epochCrypto`, `epochMac`, `epochKeys`), recipient operations, `x25519RecipientFromDidKey`, and the descriptor-store seam. |
+| was-client | `src/edv/` is the reference implementation: the EDV envelope codec, epoch construction (`epochCrypto`, `epochKeys`), recipient operations, `x25519RecipientFromDidKey`, and the descriptor-store seam. |
 | wallet-core | `/keys` (the user-key wrap-set roster stores a `CollectionEncryption` descriptor verbatim), the ceremonies that rotate epochs (`/clients`, `/recovery`). |
 | freewallet | Per-collection document ciphers over the local replica and remote-direct backends, app-provisioned collection encryption, share grants (`StorageManager.shareCollection`). |
 | dcw (private) | The mobile wallet's document cipher and sync-side epoch handling, over the same was-client/wallet-core modules. |
@@ -111,7 +112,7 @@ check with the user before editing anything in them.
   invariant, epoch-roster recipient term).
 - [was-client](https://github.com/interop-alliance/was-client) -- `src/edv/`
   is the reference implementation of this profile (EdvCodec, epochCrypto,
-  epochMac, recipients, epochKeys).
+  recipients, epochKeys).
 - [wallet-core](https://github.com/interop-alliance/wallet-core),
   [freewallet](https://github.com/interop-alliance/freewallet), dcw (private
   repo) -- the wallet layers consuming it.
