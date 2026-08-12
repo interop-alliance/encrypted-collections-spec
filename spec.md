@@ -428,15 +428,32 @@ bound into the AEAD (so a successful decrypt proves it authentic):
 * `epoch` (REQUIRED) - The `id` of the [=epoch=] the envelope sealed
   under: the writer's current epoch at encrypt time.
 * `resource` (OPTIONAL) - The resource id the envelope is bound to.
-  Present whenever the id is known at encrypt time; absent only for a
-  content-derived id, which does not exist until after encryption
-  ([[[#content-ids]]]).
+  Present whenever the id is known at encrypt time; absent only when no
+  resource id exists to bind: a content-derived id, which does not exist
+  until after encryption ([[[#content-ids]]]), or a Collection Metadata
+  envelope, which belongs to no resource.
+* `collection` (OPTIONAL) - The Collection id the envelope is bound to:
+  the Collection's `id`, the `{collection_id}` path segment of [[WAS]]'s
+  URL templates. Present on exactly one envelope kind, the Collection
+  Metadata envelope; an envelope in any resource slot -- content or
+  resource metadata -- MUST NOT bind it.
 
-A metadata envelope (the encrypted `custom` object of a resource's
-metadata, per [[WAS]]) binds `was` exactly like a content envelope, with
-`resource` always present -- bound to the resource's id, not to the
-metadata envelope's own internal document id -- and `epoch` the write
-epoch like every write.
+A resource metadata envelope (the encrypted `custom` object of a
+resource's metadata, per [[WAS]]) binds `was` exactly like a content
+envelope, with `resource` always present -- bound to the resource's id,
+not to the metadata envelope's own internal document id -- and `epoch`
+the write epoch like every write.
+
+A Collection Metadata envelope (the encrypted `custom` object of the
+Collection's own metadata, per [[WAS]]) belongs to no resource. It MUST
+bind `collection` -- the id of the Collection it was written for -- and
+MUST NOT bind `resource`; `epoch` is the write epoch like every write.
+Each of the profile's slots is thereby declared positively, by the
+member set of its envelope: `resource` marks a resource-slot envelope,
+`collection` marks the Collection Metadata envelope, and a
+content-derived content envelope binds neither -- which is exactly why
+the Collection Metadata slot requires a present `collection` rather than
+merely a missing `resource` ([[[#binding-verification]]]).
 
 ### Binding verification {#binding-verification}
 
@@ -449,13 +466,24 @@ MUST verify the `was` binding. The checks, in order, all unconditional:
    ([[[#single-epoch-era]]]).
 2. A `was.v` greater than the scheme version the reader implements is
    refused: a future-scheme envelope this reader does not understand.
-3. When the read targeted a known resource id: a string `was.resource`
-   MUST equal it (a mismatch is a server-side swap of two resources'
-   envelopes); without a string `was.resource` the envelope is treated as
-   a content-derived write, and the id re-derived from its ciphertext
-   ([[[#content-ids]]]) MUST equal the targeted id (a mismatch means the
-   envelope was served under an id it was not written for).
-4. A missing or non-string `was.epoch` is refused like a missing `was`.
+3. When the read targeted a known resource id (a content or resource
+   metadata read): a present `was.collection` is refused before any id
+   comparison (the Collection's metadata envelope was served in a
+   resource slot). A string `was.resource` MUST equal the targeted id (a
+   mismatch is a server-side swap of two resources' envelopes); without
+   a string `was.resource` the envelope is treated as a content-derived
+   write, and the id re-derived from its ciphertext ([[[#content-ids]]])
+   MUST equal the targeted id (a mismatch means the envelope was served
+   under an id it was not written for).
+4. When the read targeted the Collection Metadata slot: a present
+   `was.resource` is refused (a resource's envelope was served in the
+   Collection's slot), and a string `was.collection` MUST be present and
+   equal the id of the Collection the read addressed. A missing
+   `was.collection` means an envelope of some other slot -- notably a
+   content-derived content envelope, whose member set is otherwise
+   identical -- and a mismatched one is one Collection's metadata served
+   as another's.
+5. A missing or non-string `was.epoch` is refused like a missing `was`.
    Present, it MUST equal the epoch of the key that actually decrypted
    the envelope (the `did:key` before the `#` of that key's id); a
    mismatch is a replay of the envelope under a different epoch's key.
@@ -463,7 +491,7 @@ MUST verify the `was` binding. The checks, in order, all unconditional:
    to admit.
 
 The first two failures are scheme refusals (the envelope is outside the
-profile); the last two are integrity failures (the server misrepresented
+profile); the rest are integrity failures (the server misrepresented
 what it stored). A reader SHOULD keep the two classes distinct in its
 error taxonomy and MUST NOT mask either as a routine decryption miss.
 
@@ -663,6 +691,22 @@ state, a tampering server has no fallback path to steer a reader onto: it
 cannot serve a stripped descriptor to induce direct-to-key sealing
 ([[[#epoch-less-descriptor]]]), and it cannot serve an unbound envelope
 and have it accepted.
+
+### The scope of the collection binding {#collection-binding-scope}
+
+`was.collection` binds the Collection's id, which [[WAS]] scopes to the
+Space. Two collections carrying the same id in different Spaces are
+therefore not distinguished by the binding; they are distinguished by
+their keys alone (every epoch secret is fresh and per-collection,
+[[[#first-epoch]]]), so serving one such collection's metadata envelope
+as the other's fails as a key miss rather than as a named integrity
+failure. The space id is deliberately not bound: it is server-relative,
+and baking it into permanent envelope bytes would break decrypt across
+replicas and Space re-homing, for no gain against the attack that
+remains -- a server aliasing an entire collection, descriptor included,
+which no per-envelope binding can detect and which is
+descriptor-authenticity territory (the epoch pin and log form,
+[[[#configuration-replay]]]).
 
 ### Rotation is feed-invisible {#rotation-feed}
 
