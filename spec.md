@@ -926,14 +926,76 @@ referencing profile's rules.
 
 ## Recipient-key derivation {#recipient-derivation}
 
-<div class="note" title="Reserved section">
-Reserved. This section will define the byte-level derivation of a
-recipient's key-agreement key from its controller DID (the
-`did:key:z6Mk...` Ed25519-to-X25519 conversion producing the roster `kid`
-`did:key:z6Mk...#z6LS...`), the guard rules, and the refusal of
-explicitly supplied recipient keys. [[APP-CONNECT]] states the invariant
-(derive, never accept) and defers the derivation itself to this profile.
+When a grant admits a party as a [=recipient=], that party's
+[=key-agreement key=] is not taken from the request. It is derived from
+the controller DID the grant already names: an Ed25519 `did:key` DID
+[[DID-KEY]] has a canonical X25519 twin, and that twin is the recipient
+key. The wallet and the grantee run the same derivation independently
+over the same DID and land on byte-identical results -- the
+key-agreement key itself never transits -- which is what makes the
+`kid` the wallet writes into the
+roster ([[[#recipient-entry]]]) match the `kid` the grantee computes for
+itself (the grantee alone additionally derives the matching private
+half, from its own Ed25519 secret).
+
+The derivation is defined over a bare Ed25519 `did:key` DID
+(`did:key:z6Mk...`) and nothing else. An input outside that domain fails
+the derivation, and the failure is a refusal: the operation admitting
+the recipient MUST NOT proceed ([[APP-CONNECT]] terms such a grant
+unsatisfiable). Out-of-domain inputs include a key id (a DID with a
+fragment -- the derivation is defined over the DID itself), a
+non-Ed25519 `did:key` (an X25519 `did:key:z6LS...` carries no Edwards
+point to convert), and a DID of any other method (a `did:web` does not
+carry its key material in the identifier).
+
+The conversion, byte-exactly:
+
+1. Strip the `did:key:` prefix. The remainder is the controller's
+   `publicKeyMultibase`: `"z"` followed by base58btc [[BASE58]] of the
+   multicodec header `0xed 0x01` followed by the 32-byte Ed25519 public
+   key. Decode it; a missing `z`, a wrong multicodec header, or bytes
+   that do not decode to a valid Ed25519 curve point fail the
+   derivation (a refusal, as above).
+2. Map the Ed25519 point to its Montgomery (X25519) twin by the
+   [[RFC7748]] birational map: `u = (1 + y) / (1 - y) mod 2^255 - 19`,
+   where `y` is the point's Edwards y-coordinate; encode `u` as 32
+   little-endian bytes.
+3. Re-encode under the X25519 multicodec header:
+   `"z" + base58btc(0xec 0x01 || u)`, where `||` is byte concatenation
+   -- a `z6LS...` string, the recipient key's `publicKeyMultibase`.
+
+The derived key is identified as:
+
+* `id` - The controller DID with the derived `publicKeyMultibase` as
+  its fragment: `did:key:z6Mk...#z6LS...`. This key id is the roster
+  `kid` of every recipient entry naming the party
+  ([[[#recipient-entry]]]).
+* `type` - `X25519KeyAgreementKey2020`.
+
+Both members describe the derived key object; a recipient entry names
+the key by its `kid` alone and carries no `type` member
+([[[#recipient-entry]]]).
+
+<div class="note" title="Two key-id shapes in one descriptor">
+A descriptor carries two `did:key...#...` shapes that are easy to
+confuse. An epoch key id is self-referential, `did:key:z6LS...#z6LS...`
+-- the DID part is the X25519 [=epoch key=] itself ([[[#epoch-id]]]). A
+recipient `kid` is cross-curve, `did:key:z6Mk...#z6LS...` -- the DID
+part is the Ed25519 controller, the fragment its derived X25519 twin.
+The DID part of a key id therefore always states which entity the key
+belongs to.
 </div>
+
+An implementation MUST NOT accept a recipient key supplied on the wire,
+in any form; the key-agreement key derives from the named controller
+DID and from nothing else. An explicitly supplied key would let a
+request pair controller DID A with recipient key B, and the granting
+side would have to verify the binding anyway -- which for a `did:key`
+means performing this exact derivation. Deriving makes key substitution
+impossible by construction and keeps both axes of a share -- the
+capability and the roster entry -- pointing at the same entity.
+[[APP-CONNECT]] states this invariant at its consent surface and defers
+the derivation itself to this section.
 
 ## The user-key roster {#user-key-roster}
 
