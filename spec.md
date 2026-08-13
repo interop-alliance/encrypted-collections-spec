@@ -190,10 +190,26 @@ conforming descriptor in which any of them is absent.
   wire format, per the WAS [Encryption Scheme
   Registry](https://w3c-ccg.github.io/wallet-attached-storage-spec/#encryption-scheme-registry).
   An absent `version` means `1`. This document describes version `1`.
+* `type` (OPTIONAL) - The string `WasEpochConfiguration`, the descriptor's
+  schema identifier under the log form ([[[#log-form]]]). Inside a log
+  entry's `state` the member is REQUIRED by the Resource Log Profile
+  [[APP-CONNECT]]. A point-state projection served beside a log carries
+  the same member, so that the projection equals the verified head's
+  `state` once `history` is stripped. A descriptor no log governs MAY
+  omit it.
 * `epochs` (REQUIRED) - A non-empty array of epoch entries
   ([[[#epoch-entry]]]), append-only across the descriptor's life.
 * `currentEpoch` (REQUIRED) - The `id` of the epoch new writes encrypt
   under. MUST name an entry in `epochs` and never moves to an older epoch.
+* `history` (OPTIONAL) - The log-form dispatch hint ([[[#log-form]]]): an
+  object with `resource`, the URL of the log resource governing this
+  descriptor, and `method`, an echo of the log's format identifier,
+  named to mirror the in-log `parameters.method`. The member appears only
+  on the point-state projection of a log-governed collection, never
+  inside a log entry's `state` -- the Resource Log Profile reserves the
+  name there [[APP-CONNECT]]. The hint is never authoritative: the log's
+  own genesis commits the format identifier, and a served `method` that
+  contradicts it is refused, not dispatched on.
 * `hmac` (OPTIONAL) - The collection's [=blinding key=]: its permanent
   id and type, and the wrap of the blinding secret to each recipient
   ([[[#blinding-key]]]). Present from the descriptor's creation or
@@ -206,9 +222,10 @@ and
 [Encryption Scheme Registry](https://w3c-ccg.github.io/wallet-attached-storage-spec/#encryption-scheme-registry)
 define the server-visible rails over these members (shape validation, `epochs`
 append-only enforcement, `currentEpoch` monotonicity, and the structural
-fail-closed rejection of plaintext writes). The rails do not cover `hmac`:
-the server stores and returns that member opaquely, with no shape
-validation of its own ([[[#blinding-key]]]). A descriptor MUST NOT be
+fail-closed rejection of plaintext writes). The rails do not cover `type`,
+`history`, or `hmac`: the server stores and returns those members
+opaquely, with no shape validation of its own ([[[#blinding-key]]] for
+`hmac`). A descriptor MUST NOT be
 combined with a server-side plaintext-index (`indexes`) declaration --
 the server cannot extract attributes from an opaque envelope; an
 encrypted collection indexes by blinded tokens instead
@@ -898,7 +915,9 @@ referencing profiles' state schemas.
 Under the log form:
 
 * Each log entry's `state` carries the full descriptor at that version,
-  under a `type` member identifying its schema. The rules of this profile
+  under a `type` member identifying its schema -- for this profile's
+  descriptors, the string `WasEpochConfiguration`
+  ([[[#descriptor-members]]]). The rules of this profile
   apply to the `state` of the verified head entry exactly as they apply
   to a served point-state descriptor: same members
   ([[[#descriptor-members]]]), same first-epoch and append-only rules,
@@ -917,8 +936,11 @@ Under the log form:
   is what carries this profile's epoch-configuration integrity
   ([[[#epoch-integrity]]]).
 * A point-state descriptor served beside a log is a projection bound to
-  the log per the Resource Log Profile: a verifying consumer acts only on
-  a projection equal to the verified head's `state`.
+  the log per the Resource Log Profile. The projection's `history` member
+  names the governing log ([[[#descriptor-members]]]), and a verifying
+  consumer acts only on a projection equal to the verified head's `state`
+  after stripping `history` -- the one member the projection carries and
+  an entry's `state` never does.
 
 Nothing in this profile's epoch rules depends on which framing carries
 the descriptor; a deployment adopts the log form per collection, by the
