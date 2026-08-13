@@ -20,7 +20,7 @@ server-visible half defined by [[WAS]].
 
 | Specification                                                  | Relationship                                                                                                                                                                                                                                                                                                                                                                           |
 |----------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| [[WAS]]                                                        | The storage substrate: Spaces, Collections, Resources, the `encryption` descriptor slot, the Encryption Scheme Registry's `edv` envelope validation, conditional writes, the `changes` feed. This profile's server-visible halves ([descriptor shape rails](https://w3c-ccg.github.io/wallet-attached-storage-spec/#epoch-data-model), the epoch stamp surfaces) are defined there.                                                                                |
+| [[WAS]]                                                        | The storage substrate: Spaces, Collections, Resources, the `encryption` descriptor slot, the Encryption Scheme Registry's `edv` envelope validation, conditional writes, the `changes` feed. This profile's server-visible halves ([descriptor shape rails](https://w3c-ccg.github.io/wallet-attached-storage-spec/#epoch-data-model), the epoch stamp surfaces, the [`blinded-index` query profile](https://w3c-ccg.github.io/wallet-attached-storage-spec/#query-profile-blinded-index) with its unique-attribute enforcement) are defined there.                                                                                |
 | [[APP-CONNECT]]                                                | The companion profile by which an application obtains capabilities into a wallet's Space. It defers to this profile for the encrypted-collection construction: the epoch roster, the envelope format, recipient-key derivation, and the definition of an epoch-roster recipient. Its Resource Log Profile defines the log form of the resources this profile shapes ([[[#log-form]]]). |
 | [Encrypted Data Vaults](https://identity.foundation/edv-spec/) | The envelope vocabulary: the Encrypted Document shape, the JWE recipients structure, and the blinded-index model this profile's envelopes reuse verbatim.                                                                                                                                                                                                                              |
 
@@ -136,6 +136,25 @@ acceptance branch for either anywhere in the profile:
   [=epoch key=] and binds the `was` protected-header parameter
   ([[[#envelope]]]).</dd>
 
+  <dt><dfn data-lt="blinding keys">blinding key</dfn></dt>
+  <dd>The key that makes queries over an encrypted collection possible
+  without telling the server what is being searched for. In a blinded
+  query, the client never sends a plaintext attribute name or value.
+  It HMACs each one into an opaque token, and the server matches
+  stored tokens against queried tokens. The server learns which
+  [=envelopes=] matched, but not what the query meant.
+  Concretely, the blinding key is the single HMAC-SHA-256 key under
+  which an [=indexable=] collection's index tokens are blinded: a
+  32-byte secret carried by the descriptor's `hmac` member, wrapped to
+  each [=recipient=] like an [=epoch secret=]. Installed when the
+  collection is provisioned and never rotated
+  ([[[#blinded-index]]]).</dd>
+
+  <dt><dfn data-lt="indexable">indexable collection</dfn></dt>
+  <dd>An [=encrypted collection=] whose descriptor carries a
+  [=blinding key=], so its envelopes may carry blinded index tokens
+  and its readers may query by them ([[[#blinded-index]]]).</dd>
+
   <dt><dfn data-lt="key-agreement keys|KAK">key-agreement key</dfn></dt>
   <dd>A party's own X25519 key, identified by the `kid` its recipient
   entries carry. Epoch secrets are wrapped to it; envelopes never are
@@ -175,16 +194,25 @@ conforming descriptor in which any of them is absent.
   ([[[#epoch-entry]]]), append-only across the descriptor's life.
 * `currentEpoch` (REQUIRED) - The `id` of the epoch new writes encrypt
   under. MUST name an entry in `epochs` and never moves to an older epoch.
+* `hmac` (OPTIONAL) - The collection's [=blinding key=]: its permanent
+  id and type, and the wrap of the blinding secret to each recipient
+  ([[[#blinding-key]]]). Present from the descriptor's creation or
+  never, and never rotated ([[[#blinding-key-lifecycle]]]).
 
 The descriptor's `scheme` and `version` are set-once for the life of the
-collection, and a descriptor MUST NOT be combined with a server-side
-`indexes` declaration -- both per [[WAS]], whose [Epoch data
+collection, per [[WAS]], whose [Epoch data
 model](https://w3c-ccg.github.io/wallet-attached-storage-spec/#epoch-data-model)
 and
 [Encryption Scheme Registry](https://w3c-ccg.github.io/wallet-attached-storage-spec/#encryption-scheme-registry)
 define the server-visible rails over these members (shape validation, `epochs`
 append-only enforcement, `currentEpoch` monotonicity, and the structural
-fail-closed rejection of plaintext writes).
+fail-closed rejection of plaintext writes). The rails do not cover `hmac`:
+the server stores and returns that member opaquely, with no shape
+validation of its own ([[[#blinding-key]]]). A descriptor MUST NOT be
+combined with a server-side plaintext-index (`indexes`) declaration --
+the server cannot extract attributes from an opaque envelope; an
+encrypted collection indexes by blinded tokens instead
+([[[#blinded-index]]]).
 
 ### The first epoch {#first-epoch}
 
@@ -331,6 +359,9 @@ operations:
   appended like a removal. History stays readable to the successor; the
   retiring key is sealed out of everything written after.
 
+On an [=indexable=] collection, each of these operations also
+maintains the [=blinding key=]'s wraps ([[[#blinding-key-lifecycle]]]).
+
 On a precondition failure (a concurrent descriptor write won), the client
 re-reads the descriptor, re-applies its change to the fresh state, and
 retries, bounded.
@@ -373,7 +404,8 @@ Conforming descriptors do not carry the member.
 
 A resource in an encrypted collection is stored as an Encrypted Data Vault
 Encrypted Document: the JSON object `{ "id": ..., "sequence": ...,
-"jwe": ..., "indexed": ... }` (with `indexed` optional), whose `jwe` is a
+"jwe": ..., "indexed": ... }` (with `indexed` optional;
+[[[#indexed-entries]]]), whose `jwe` is a
 JWE in JSON Serialization carrying the sealed plaintext. The stored
 content type is `application/jose+json` where the server parses it, with
 `application/json` as the portable default an unmodified WAS server
@@ -385,7 +417,10 @@ The plaintext document carried inside the JWE declares its own inner
 content type: `{ "contentType": ... }` for JSON content, plus
 `"encoding": "utf-8"` for text or `"encoding": "base64"` for binary.
 Nothing user-visible -- content, plaintext type, user metadata -- appears
-outside the ciphertext.
+outside the ciphertext. The one plaintext-derived exception is the
+opaque blinded tokens of an [=indexable=] collection's `indexed`
+member ([[[#indexed-entries]]]), from which no attribute name or
+value is recoverable.
 
 Every envelope names exactly one JWE recipient: the [=epoch key=] of the
 epoch it sealed under ([[[#epoch-id]]]). A conforming writer MUST NOT
@@ -551,6 +586,268 @@ the resolved epoch keys, and only those:
 A reader that is not a recipient of any epoch of a collection fails
 closed with a recipiency error -- the read axis is absent, whatever its
 capability (fetch axis) status.
+
+## The blinded index {#blinded-index}
+
+An [=encrypted collection=] MAY be [=indexable=]: selected attributes
+of its documents are blinded into opaque HMAC tokens, so the server
+can match equality queries without learning attribute names or
+values. The construction is the [[EDV]] blinded-index model. Three
+parts are client territory and defined here: the [=blinding key=] the
+descriptor distributes ([[[#blinding-key]]]), the `indexed` token
+entries envelopes carry ([[[#indexed-entries]]],
+[[[#blinded-tokens]]]), and the encrypted index schema
+([[[#index-schema]]]). The query wire shape and the server's matching
+are the server-visible half, defined by [[WAS]]'s [`blinded-index`
+query
+profile](https://w3c-ccg.github.io/wallet-attached-storage-spec/#query-profile-blinded-index).
+Serving queries is a server feature (the `blinded-index-query`
+backend feature of [[WAS]]); an indexable collection stored on a
+server without it is fully functional, merely unqueryable remotely.
+
+### The blinding key {#blinding-key}
+
+An [=indexable=] collection's descriptor carries the OPTIONAL `hmac`
+member, a JSON object:
+
+* `id` (REQUIRED) - A non-empty string identifying the blinding key,
+  opaque and permanent for the life of the collection (the reference
+  construction mints a `urn:uuid:` URN). Every `indexed` entry and
+  every query names the key by this id.
+* `type` (REQUIRED) - The string `Sha256HmacKey2019`. Any other value
+  MUST be refused; a reader never infers the blinding algorithm from
+  anything but this member.
+* `recipients` (REQUIRED) - A non-empty array of recipient entries in
+  exactly the shape of an epoch's ([[[#recipient-entry]]]): the raw
+  32-byte blinding secret, key-wrapped to each recipient's
+  [=key-agreement key=]. One wrap construction serves both kinds of
+  secret; there is no separate blinding-key wrap format to review.
+
+The blinding secret MUST be 32 freshly generated random bytes. Like
+an [=epoch secret=], it MUST NOT be, or be derived from, any
+longer-lived key or any other collection's key ([[[#first-epoch]]]),
+and nothing secret appears in the descriptor.
+
+Recipiency of the blinding key is granted by the same roster
+operations that grant epoch recipiency
+([[[#blinding-key-lifecycle]]]). A declared `hmac` member from which
+a client can resolve no secret -- no entry names its
+[=key-agreement key=], or the entry that does fails to unwrap -- is a
+typed failure, exactly as for an epoch wrap ([[[#reads]]]). Indexing
+and querying fail closed: the client MUST NOT downgrade to writing
+un-indexed envelopes on an [=indexable=] collection, which would
+write envelopes no query can find. Plain reads do not involve the
+blinding key.
+
+### Fixed at provisioning {#blinding-key-lifecycle}
+
+Indexability is a property fixed at the collection's birth, and the
+blinding key never changes afterward:
+
+* The key MUST be minted in the same provisioning act as the first
+  epoch ([[[#first-epoch]]]) and wrapped to the same initial
+  recipients. It MUST NOT be added to a descriptor that already
+  carries an epoch roster without one. A retro-fitted key would leave
+  every envelope written before it without tokens, silently absent
+  from every query, so mid-life addition is refused rather than
+  half-honored.
+* The install shares the first epoch's adoption rule: an `hmac`
+  member already present in the descriptor is adopted as-is, never
+  overwritten. Exactly one blinding key ever exists per collection.
+* The key never rotates -- not on epoch rotation, not on recipient
+  removal. Blinded tokens MUST compare across the collection's whole
+  history; a successor key would split every query at the
+  switchover, with a re-blind of the whole history the only repair.
+* The roster operations of [[[#roster-operations]]] maintain the
+  blinding key's `recipients` alongside the epochs'. Adding a
+  recipient MUST wrap the blinding secret to it, idempotently.
+  Removing a recipient drops the leaver's wrap entry as housekeeping
+  only: the key itself is unchanged, and the operation MUST NOT mint
+  a replacement key ([[[#blinding-key-removal]]] states the
+  asymmetry this accepts). Replacing a recipient's key composes the
+  two, as for epochs.
+
+A descriptor without an `hmac` member describes a collection that is
+not indexable. That is a conforming state, not an error; only a
+request to make such a collection indexable after the fact is
+refused.
+
+<div class="note" title="Why mid-life indexing is refused">
+In a plaintext document store an index is a server-side optimization:
+the server can backfill it over data it can read, and an incomplete
+index degrades to a slower scan, never to wrong answers. Neither
+property holds here. Tokens are computed client-side over plaintext
+the server never sees, so retro-fitting a blinding key would require
+a client-side sweep re-encrypting the collection's entire history.
+And the blinded index is the only query mechanism over ciphertext:
+there is no scan fallback, so a partially indexed collection answers
+queries with a silent subset that looks complete. Allowing the key
+with forward-only indexing would bake that correctness failure in
+permanently; allowing it with a backfill sweep would demand a
+completion guarantee no party can give, since writers on cached
+descriptors, including local-first writers offline for long periods,
+keep producing un-indexed envelopes during and after the sweep. The
+refusal trades that machinery for an invariant a verifier can
+actually check.
+</div>
+
+Under the log form ([[[#log-form]]]) each entry's `state` carries the
+full descriptor, `hmac` included, so the entry proof covers the
+member exactly as it covers the epoch configuration -- and
+fixed-at-provisioning becomes a claim a verifier can
+check across the entry chain: one permanent `id`, present from the
+first entry or absent from all. On pure point state the member has no
+client-side guard of its own (the epoch pin does not cover it), and a
+host serving a substituted `hmac` member knows its secret, so it can
+test guessed attribute values against the reader's subsequent query
+tokens. The log form is what closes that, as with any configuration
+substitution ([[[#epoch-integrity]]]).
+
+### Indexed entries {#indexed-entries}
+
+A content envelope of an [=indexable=] collection MAY carry the
+EDV `indexed` member ([[[#stored-envelope]]]): the blinded tokens the
+server matches queries against. The structure is the [[EDV]]
+Encrypted Document's `indexed` array, reused verbatim, with this
+profile's cardinalities:
+
+* At most one entry, a JSON object whose `hmac.id` and `hmac.type`
+  MUST equal the descriptor `hmac` member's `id` and `type` -- one
+  blinding key per collection, so one entry per envelope.
+* The entry's `sequence` is the envelope's own `sequence`.
+* The entry's `attributes` is an array of `{ "name": ..., "value":
+  ..., "unique": ... }` objects (`unique` optional), one per blinded
+  token pair, computed as [[[#blinded-tokens]]] defines. An attribute
+  with `"unique": true` claims per-collection uniqueness of its token
+  pair; enforcing the claim is the server-visible half, the
+  unique-blinded-attributes rule of [[WAS]]'s `blinded-index`
+  profile.
+
+An envelope of a collection with no blinding key MUST NOT carry
+`indexed`. Neither does any metadata envelope -- a resource metadata
+envelope and the Collection Metadata envelope alike MUST NOT carry
+the member. Only content envelopes are indexed; queries match
+content, and the index schema itself rides the Collection Metadata
+envelope ([[[#index-schema]]]).
+
+`indexed` lives outside the JWE, in the clear, and that is its
+function: the server stores and matches it without being able to
+invert a token. It is consequently outside the AEAD and the `was`
+binding. A reader MUST NOT treat `indexed` as authenticated: query
+results are candidate envelopes, and integrity rests where it always
+does, on each envelope's decrypt and binding verification
+([[[#binding-verification]]]). A tampering server can suppress or
+misreport matches -- a fetch-axis failure ([[[#two-axes]]]) no
+per-envelope construction detects -- but cannot forge an envelope
+that decrypts.
+
+### Token computation {#blinded-tokens}
+
+Every writer of a collection MUST blind identically, or queries stop
+matching history. The choices below are therefore permanent
+byte-level values, baked into every stored token. Throughout, `HMAC`
+is HMAC-SHA-256 [[RFC2104]] under the collection's 32-byte blinding
+secret, `||` is byte concatenation, and `base64url` is unpadded
+[[RFC4648]] (section 5).
+
+An indexed attribute is named by a dotted path into the sealed
+plaintext document, rooted at `content` (the document's content) or
+`meta` (the document's own inner type descriptor: `contentType` and
+`encoding`). The path never addresses the WAS resource metadata
+slot, which is a separate envelope ([[[#was-binding]]]). A literal
+`.` inside a path segment is escaped as `\.`, and the name digest
+below is taken over the full path string as written, escapes
+included. For a simple attribute with path `name` holding plaintext
+value `value`:
+
+* The name digest is `SHA-256(UTF-8(name))` -- the path string
+  itself, uncanonicalized.
+* The value digest is `SHA-256(UTF-8(JCS(value)))`, where JCS is the
+  JSON Canonicalization Scheme [[RFC8785]]. The value is
+  canonicalized as a JSON value: a string digests with its quotes, a
+  number in its canonical JSON form.
+* The name token is `base64url(HMAC(name digest))`.
+* The value token is `base64url(HMAC(SHA-256(name digest || value
+  digest)))`. Folding the name digest in salts the value, so equal
+  values under different attribute names produce unrelated tokens.
+
+An attribute whose value is an array blinds each element as its own
+token pair.
+
+A compound index -- an ordered list of paths declared as one index
+([[[#index-schema]]]) -- blinds one token pair per leading prefix of
+the list, so a query may constrain any prefix. The prefix's name
+digest is `SHA-256(name digest 1 || ... || name digest k)`, and its
+value digest `SHA-256(value digest 1 || ... || value digest k)`;
+both feed the same HMAC-and-salt step as a simple attribute's
+digests. Two boundary rules keep writer and querier aligned:
+
+* A one-member prefix is blinded in this compound
+  (digest-of-digests) form -- unless the same path is also declared
+  as a simple index, in which case the simple form already covers it
+  and the compound form is not emitted.
+* `unique` is carried only by the full-length prefix. A shorter one
+  cannot claim the whole combination's uniqueness.
+
+Multi-valued members spread combinatorially, one token pair per
+combination of element values.
+
+### The index schema {#index-schema}
+
+Which attributes a collection indexes -- and with which `unique` and
+compound declarations -- is configuration every writer and every
+later-added reader must agree on: a writer blinds exactly the
+declared attributes at write time, and a reader can only query what
+it knows is declared. This profile persists that schema encrypted,
+inside the Collection Metadata envelope ([[[#was-binding]]]), as the
+`indexSchema` member of the collection metadata's `custom` object:
+
+* `revision` (REQUIRED) - A non-negative integer, incremented by each
+  declaration write; the empty schema is revision `0`.
+* `indexes` (REQUIRED) - An array of declarations, each a JSON
+  object:
+  * `attribute` (REQUIRED) - A dotted path (a simple index) or an
+    array of dotted paths (a compound index), per
+    [[[#blinded-tokens]]]. A one-member array MUST be normalized to
+    the bare path: it declares the same simple index, never a
+    one-member compound (the two spellings blind differently, so
+    only one may exist).
+  * `unique` (OPTIONAL) - `true` to declare the index unique.
+  * `addedIn` (REQUIRED) - The `revision` at which the declaration
+    was added.
+
+Declaring an index appends an entry and increments `revision`,
+through the conditional-write mechanics of the Collection Metadata
+surface (its validator and `If-Match`, per [[WAS]]), so concurrent
+declarations serialize. Declarations are add-only in this profile.
+Re-declaring an existing index on identical terms is a no-op;
+changing a declaration's `unique` in place MUST be refused -- the
+server has been enforcing, or not enforcing, the claim for every
+envelope already written.
+
+`addedIn` is the partial-coverage marker: envelopes written before a
+declaration carry no tokens for it, so matches on a later-added
+attribute MAY be partial over the collection's earlier history. A
+reader that needs full coverage backfills by re-writing each earlier
+envelope's `indexed` entries under the current schema -- a
+client-side sweep of the whole history, the same cost class that
+makes rotating the blinding key untenable
+([[[#blinding-key-lifecycle]]]).
+
+A reader MUST NOT blind a query for an attribute the persisted schema
+does not declare: there is nothing for the tokens to match, and
+failing closed keeps a typo from reading as an empty collection. An
+absent or empty `indexSchema` on an indexable collection means
+nothing is declared yet -- indexable, but nothing to query. A
+persisted `indexSchema` that does not conform to this shape, or a
+non-conforming entry within one, yields no declarations rather than
+a refusal: the schema is discovery metadata riding a shared `custom`
+object, and the fail-closed guard is the undeclared-attribute
+refusal above.
+
+The schema rides the encrypted metadata envelope, never the plaintext
+Collection Description, because attribute names and index structure
+reveal the collection's data model ([[[#index-schema-sensitivity]]]).
 
 ## Deferred minting {#deferred-minting}
 
@@ -725,3 +1022,38 @@ Deployments needing rollback protection keep client-side monotonic
 state (an epoch pin) or adopt the
 log form, whose hash chain and pinned head make any rollback a chain
 break ([[[#log-form]]]).
+
+### The blinding key survives removal {#blinding-key-removal}
+
+Removing a recipient rotates the epoch but never the
+[=blinding key=] ([[[#blinding-key-lifecycle]]]), so a removed recipient keeps
+the ability to compute blinded tokens forever. Against the server
+alone this is harmless: the server gates the query profile behind a
+capability the removed reader no longer holds. The residual is
+collusion. A server willing to run the removed recipient's queries,
+or to hand it the stored `indexed` entries, lets it confirm guessed
+attribute values against any envelope in the collection, past and
+future writes alike. The asymmetry is accepted by design -- the
+alternative, rotating the blinding key on removal, would orphan the
+tokens of the collection's whole history -- and it grants no
+content, only equality tests against values the remover already
+guessed. Documentation and libraries built on this profile MUST
+state the asymmetry alongside the limitations of
+[[[#rotation-limitations]]].
+
+### What the index reveals {#index-schema-sensitivity}
+
+Blinded tokens hide names and values but not structure. The server
+learns, by design, which envelopes carry equal values for equal
+attributes (matching is token equality), how many attributes each
+envelope indexes, and which tokens a querying reader asks about;
+`unique` declarations additionally mark which attributes claim
+collection-wide uniqueness. Deployments should index the few
+attributes they query, not everything they store.
+
+The schema itself is sensitive for the same reason: attribute names
+and compound structure describe the collection's data model. That is
+why `indexSchema` lives inside the encrypted Collection Metadata
+envelope ([[[#index-schema]]]) rather than in the plaintext
+Collection Description, and why the descriptor's `hmac` member
+carries a key id and wrapped bytes only, never attribute names.
