@@ -20,7 +20,7 @@ server-visible half defined by [[WAS]].
 
 | Specification                                                  | Relationship                                                                                                                                                                                                                                                                                                                                                                           |
 |----------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| [[WAS]]                                                        | The storage substrate: Spaces, Collections, Resources, the `encryption` descriptor slot, the Encryption Scheme Registry's `edv` envelope validation, conditional writes, the `changes` feed. This profile's server-visible halves ([descriptor shape rails](https://w3c-ccg.github.io/wallet-attached-storage-spec/#epoch-data-model), the epoch stamp surfaces, the [`blinded-index` query profile](https://w3c-ccg.github.io/wallet-attached-storage-spec/#query-profile-blinded-index) with its unique-attribute enforcement) are defined there.                                                                                |
+| [[WAS]]                                                        | The storage substrate: Spaces, Collections, Resources, the `encryption` descriptor slot, the Encryption Scheme Registry's `edv` envelope validation, conditional writes, the `changes` feed. This profile's server-visible halves ([descriptor shape validation](https://w3c-ccg.github.io/wallet-attached-storage-spec/#epoch-data-model), the epoch stamp surfaces, the [`blinded-index` query profile](https://w3c-ccg.github.io/wallet-attached-storage-spec/#query-profile-blinded-index) with its unique-attribute enforcement) are defined there.                                                                                |
 | [[APP-CONNECT]]                                                | The companion profile by which an application obtains capabilities into a wallet's Space. It defers to this profile for the encrypted-collection construction: the epoch roster, the envelope format, recipient-key derivation, and the definition of an epoch-roster recipient. Its Resource Log Profile defines the log form of the resources this profile shapes ([[[#log-form]]]). |
 | [Encrypted Data Vaults](https://identity.foundation/edv-spec/) | The envelope vocabulary: the Encrypted Document shape, the JWE recipients structure, and the blinded-index model this profile's envelopes reuse verbatim.                                                                                                                                                                                                                              |
 
@@ -160,10 +160,38 @@ acceptance branch for either anywhere in the profile:
   entries carry. Epoch secrets are wrapped to it; envelopes never are
   ([[[#single-epoch-era]]]).</dd>
 
+  <dt><dfn data-lt="user keys">user key</dfn></dt>
+  <dd>The account-level secret the user-key roster delivers
+  ([[[#user-key-roster]]]): the roster's current [=epoch secret=], minted
+  fresh with each roster epoch, wrapped once per enrolled
+  [=wallet client=]. Its derived key-agreement key ([[[#recipient-derivation]]])
+  is how the account's [=owner=] is a [=recipient=] of the account's
+  encrypted collections. Client-minted, held by no server, and
+  derivable from no passphrase or seed.</dd>
+
+  <dt><dfn data-lt="wallet clients|enrolled client|enrolled clients">wallet
+  client</dfn></dt>
+  <dd>The keyed, revocable identity of an (app, user) pair enrolled in an
+  account: an Ed25519 signing key listed in the
+  [=account controller document=], with its key-agreement key published
+  under the controller
+  marker ([[[#keyagreement-controller-marker]]]) and a wrap in the
+  user-key roster. One machine hosts many clients (browser profiles,
+  several apps, several accounts); a client is not tied to hardware.</dd>
+
+  <dt><dfn data-lt="controller document">account controller
+  document</dfn></dt>
+  <dd>The DID document [[DID-CORE]] of the [=Space=]'s controller,
+  independently resolved and verified by the client per the controller
+  DID's method. The source of record for which [=wallet clients=] an
+  account has and which key-agreement keys back the user-key roster's
+  recipients ([[[#roster-recipients]]]).</dd>
+
   <dt><dfn data-lt="collection owner">owner</dfn></dt>
   <dd>The controller of the [=Space=] a [=collection=] lives in. Always a
   [=recipient=] of every encrypted collection in their own Space; any
-  departure is an explicit consent surface, never a silent default.</dd>
+  departure is an explicit consent surface rather than a silent
+  default.</dd>
 
   <dt><dfn data-lt="collections">collection</dfn></dt>
   <dd>A WAS
@@ -205,7 +233,7 @@ conforming descriptor in which any of them is absent.
   object with `resource`, the URL of the log resource governing this
   descriptor, and `method`, an echo of the log's format identifier,
   named to mirror the in-log `parameters.method`. The member appears only
-  on the point-state projection of a log-governed collection, never
+  on the point-state projection of a log-governed collection, not
   inside a log entry's `state` -- the Resource Log Profile reserves the
   name there [[APP-CONNECT]]. The hint is never authoritative: the log's
   own genesis commits the format identifier, and a served `method` that
@@ -220,9 +248,9 @@ collection, per [[WAS]], whose [Epoch data
 model](https://w3c-ccg.github.io/wallet-attached-storage-spec/#epoch-data-model)
 and
 [Encryption Scheme Registry](https://w3c-ccg.github.io/wallet-attached-storage-spec/#encryption-scheme-registry)
-define the server-visible rails over these members (shape validation, `epochs`
+define the server-visible checks over these members (shape validation, `epochs`
 append-only enforcement, `currentEpoch` monotonicity, and the structural
-fail-closed rejection of plaintext writes). The rails do not cover `type`,
+fail-closed rejection of plaintext writes). These checks do not cover `type`,
 `history`, or `hmac`: the server stores and returns those members
 opaquely, with no shape validation of its own ([[[#blinding-key]]] for
 `hmac`). A descriptor MUST NOT be
@@ -253,10 +281,11 @@ create-if-absent epoch install -- with these properties, all REQUIRED:
 * The install MUST be create-if-absent and adopting: a descriptor that
   already carries epochs -- including one written by a concurrent
   provisioner that won the guarded create or compare-and-swap race -- MUST
-  be adopted as-is, never overwritten. Re-running the install against a
+  be adopted as-is and MUST NOT be overwritten. Re-running the install
+  against a
   settled collection performs only reads. Exactly one first epoch ever
   exists. (A client library MAY additionally expose an explicit
-  initialization spelling that refuses, rather than adopts, an existing
+  initialization operation that refuses, rather than adopts, an existing
   roster; it MUST NOT overwrite one.)
 * A torn provisioning run (the collection declared encrypted, the epoch
   install not yet landed) MUST be repairable by re-running the same
@@ -321,7 +350,7 @@ Two consequences are load-bearing:
 
 * An envelope names its epoch structurally: the JWE recipient `kid` up to
   the `#` is the epoch `id`, resolvable by any standard `did:key`
-  resolver. Envelopes are roster-blind -- they name the epoch key, never
+  resolver. Envelopes are roster-blind -- they name the epoch key, not
   any per-recipient key.
 * Epoch ids are collision-free rather than ordinal. Two independently
   minted epochs are two distinct epochs; no counter coordination exists or
@@ -368,7 +397,7 @@ operations:
   the removed reader's
   capabilities. Rotate first, then revoke, as one indivisible removal: a
   client library SHOULD NOT expose a rotate-without-revoke or
-  revoke-without-rotate spelling of removal.
+  revoke-without-rotate variant of removal.
 * Replacing a recipient's key -- retiring one key-agreement key in favor
   of its successor, the operation behind key-rotation cascades -- composes
   the two in one conditional write: the successor key is escrowed into
@@ -385,8 +414,8 @@ retries, bounded.
 
 ## Epoch-configuration integrity {#epoch-integrity}
 
-A descriptor hosted by a storage server gets its shape rails from the
-server, but shape rails cannot stop a malicious host from serving a
+A descriptor hosted by a storage server gets its shape checks from the
+server, but shape checks cannot stop a malicious host from serving a
 fabricated or rolled-back epoch configuration. Two client-side guards
 close that gap, neither of them carried in the descriptor itself:
 
@@ -400,7 +429,7 @@ close that gap, neither of them carried in the descriptor itself:
   configuration fails verification -- and the hash chain with a pinned
   head makes any rollback a chain break.
 
-A deployment on pure point state keeps the server's shape rails
+A deployment on pure point state keeps the server's shape checks
 (append-only `epochs`, monotonic `currentEpoch`) and the pin; only the
 log form additionally establishes authorship against the host itself.
 
@@ -457,7 +486,8 @@ an epoch key ([[[#single-epoch-era]]]).
   content-encryption
   key is generated per envelope, so envelope bytes are nondeterministic
   across re-encryptions of identical plaintext -- deduplication keys on
-  decrypted content identity, never on envelope bytes or resource id.
+  decrypted content identity rather than on envelope bytes or resource
+  id.
 
 ### Content-derived resource ids {#content-ids}
 
@@ -575,8 +605,8 @@ epochs MAY unwrap lazily on first use. A reader that does not hold
 `currentEpoch` -- a removed or archive reader, whose writes the server
 rejects via its revoked capability anyway -- selects as its write epoch,
 deterministically, the last epoch in the descriptor's canonical `epochs`
-order that names it, never the incidental order in which secrets
-happened to unwrap.
+order that names it. The incidental order in which secrets happened to
+unwrap plays no part in the selection.
 
 Decryption routes by the stored envelope's JWE recipient `kid` against
 the resolved epoch keys, and only those:
@@ -593,7 +623,8 @@ the resolved epoch keys, and only those:
   session, so a genuinely foreign envelope cannot drive a refetch loop.
   Still unknown after the refresh, the envelope is refused as unroutable.
 * A failed unwrap of a recipient entry that names the reader is a typed
-  failure, never a silently absent key: key servers whose unwrap resolves
+  failure rather than a silently absent key: key servers whose unwrap
+  resolves
   a null key on mismatch are surfaced as the typed failure, not treated
   as "try the next candidate succeeded".
 * An AEAD authentication failure after a successful key unwrap is an
@@ -669,9 +700,9 @@ blinding key never changes afterward:
   from every query, so mid-life addition is refused rather than
   half-honored.
 * The install shares the first epoch's adoption rule: an `hmac`
-  member already present in the descriptor is adopted as-is, never
-  overwritten. Exactly one blinding key ever exists per collection.
-* The key never rotates -- not on epoch rotation, not on recipient
+  member already present in the descriptor is always adopted as-is (not
+  overwritten). Exactly one blinding key ever exists per collection.
+* The key never rotates, not on epoch rotation, not on recipient
   removal. Blinded tokens MUST compare across the collection's whole
   history; a successor key would split every query at the
   switchover, with a re-blind of the whole history the only repair.
@@ -690,9 +721,9 @@ request to make such a collection indexable after the fact is
 refused.
 
 <div class="note" title="Why mid-life indexing is refused">
-In a plaintext document store an index is a server-side optimization:
-the server can backfill it over data it can read, and an incomplete
-index degrades to a slower scan, never to wrong answers. Neither
+In a plaintext document store an index is a server-side optimization.
+The server can backfill it over data it can read, and an incomplete
+index degrades to a slower scan, as opposed to wrong answers. Neither
 property holds here. Tokens are computed client-side over plaintext
 the server never sees, so retro-fitting a blinding key would require
 a client-side sweep re-encrypting the collection's entire history.
@@ -826,8 +857,8 @@ inside the Collection Metadata envelope ([[[#was-binding]]]), as the
   * `attribute` (REQUIRED) - A dotted path (a simple index) or an
     array of dotted paths (a compound index), per
     [[[#blinded-tokens]]]. A one-member array MUST be normalized to
-    the bare path: it declares the same simple index, never a
-    one-member compound (the two spellings blind differently, so
+    the bare path: it declares the same simple index, not a
+    one-member compound (the two forms blind differently, so
     only one may exist).
   * `unique` (OPTIONAL) - `true` to declare the index unique.
   * `addedIn` (REQUIRED) - The `revision` at which the declaration
@@ -862,8 +893,8 @@ a refusal: the schema is discovery metadata riding a shared `custom`
 object, and the fail-closed guard is the undeclared-attribute
 refusal above.
 
-The schema rides the encrypted metadata envelope, never the plaintext
-Collection Description, because attribute names and index structure
+The schema rides the encrypted metadata envelope rather than the
+plaintext Collection Description, because attribute names and index structure
 reveal the collection's data model ([[[#index-schema-sensitivity]]]).
 
 ## Deferred minting {#deferred-minting}
@@ -905,7 +936,7 @@ invisible to the local writer.
 ## Point state and log form {#log-form}
 
 An [=encryption descriptor=] as defined above is point state: the current
-configuration, served whole, its rails enforced by the server. The
+configuration, served whole, its invariants enforced by the server. The
 companion App Connect profile defines a Resource
 Log Profile ([[APP-CONNECT]]) under which the same resources are governed
 as hash-linked logs of full-state entries, each entry proof-carrying and
@@ -927,7 +958,7 @@ Under the log form:
   can check across consecutive entries), while the log records the
   succession of whole configurations -- so "epochs is append-only" and
   "currentEpoch never moves backwards" become verifiable claims over the
-  entry chain rather than server-enforced rails.
+  entry chain rather than server-enforced rules.
 * Authorship of a configuration is established by the entry's Data
   Integrity proof, verified against the deployment's root of trust per
   the Resource Log Profile's external-authorization rule; the entry
@@ -1021,15 +1052,123 @@ the derivation itself to this section.
 
 ## The user-key roster {#user-key-roster}
 
-<div class="note" title="Reserved section">
-Reserved. This section will define the account-level user-key roster: a
-`CollectionEncryption`-shaped descriptor stored as a resource, whose
-current epoch delivers the account's user key wrapped once per enrolled
-client -- a delivery channel, never a source of authority -- together
-with its epoch pin and document-backed recipient resolution rules. The
+An account holds one roster resource that delivers its [=user key=] to
+every [=wallet client=]: a descriptor-shaped resource whose current
+epoch's secret is the current user key, wrapped once per enrolled
+client. This section defines the roster resource, the rule that its
+recipients resolve from the [=account controller document=] rather than
+from the roster itself, and the controller-marker convention that makes
+that resolution unambiguous.
+
+### The roster resource {#roster-resource}
+
+The roster reuses this profile's [=encryption descriptor=] verbatim:
+epoch entries ([[[#epoch-entry]]]), epoch ids ([[[#epoch-id]]]),
+recipient entries ([[[#recipient-entry]]]), and the roster operations
+([[[#roster-operations]]]) apply unchanged, as do the
 epoch-configuration integrity guards ([[[#epoch-integrity]]]) and the
-log form ([[[#log-form]]]) apply to it unchanged.
-</div>
+log form ([[[#log-form]]]). What differs is what the epoch secret is
+for. A content collection's [=epoch secret=] seeds an [=epoch key=]
+that seals [=envelopes=]; the roster describes no content and seals
+nothing. Its epoch secret IS the payload: the current epoch's secret is
+the account's current user key, and holding a wrap in the current epoch
+is how an enrolled client receives it. Rotating the user key is the
+ordinary removal operation of [[[#roster-operations]]] -- a fresh epoch
+(a fresh user key) wrapped to each remaining recipient, `currentEpoch`
+repointed.
+
+This composes with the first-epoch freshness rule ([[[#first-epoch]]])
+rather than excepting it. The user key is minted fresh with its epoch
+-- the two are one generation, so the roster's epoch secret is not, and
+does not derive from, any longer-lived key. The rule's account-level
+clause then does its work one level down: a content collection's epoch
+secret MUST NOT be, or be derived from, the user key, so no
+collection-epoch escrow can ever hand an external recipient the account
+key. The user key sits above collection epochs by wrap direction alone:
+its derived key-agreement key ([[[#recipient-derivation]]]) receives
+wraps of collection epoch secrets; the user key itself is wrapped only
+in the roster.
+
+The roster is a delivery channel, not a source of authority.
+Possession of the roster resource confers nothing: its entries hold
+public key ids and wrapped-key ciphertext only ([[[#recipient-entry]]]),
+its recipients are resolved from the [=account controller document=]
+([[[#roster-recipients]]]), and under the log form authorship of every
+configuration anchors in that document's keys. An implementation that
+keeps an epoch pin ([[[#epoch-integrity]]]) SHOULD retain it even when
+it also pins the log head: the epoch pin still guards a client whose
+chain-head state was lost.
+
+### Document-backed recipients {#roster-recipients}
+
+The roster's recipients are the account's enrolled wallet clients, and
+their [=key-agreement keys=] resolve from the verified
+[=account controller document=] rather than from the roster:
+
+* A wrap is minted only to a key the verified document currently lists
+  under `keyAgreement`. A recipient entry whose `kid` matches no such
+  verification method MUST be dropped from resolution: it receives no
+  wrap of any fresh epoch.
+* A removal from the document is what retires a recipient. After an
+  edit removes a client's verification methods, one rotation retires
+  every current-epoch recipient the post-edit document no longer backs
+  -- a converging operation a re-run completes, with no per-client
+  pairing state required beyond the document itself.
+* Where the roster is log-governed, that post-edit rotation is anchored
+  at or past the edit, satisfying the sealing rule the Resource Log
+  Profile imposes after an authorized-writer removal [[APP-CONNECT]].
+
+### The keyAgreement controller marker {#keyagreement-controller-marker}
+
+Resolving recipients from the document requires pairing each enrolled
+client with the `keyAgreement` verification method that is its own. The
+document may carry `keyAgreement` methods that belong to no enrolled
+client (a recovery key held against loss, for one), and nothing in
+[[DID-CORE]] ties a `keyAgreement` method to a sibling signing method.
+The controller marker is the write-side convention that records the tie
+in the document itself.
+
+On the write side:
+
+* Each enrolled client's `keyAgreement` verification method MUST be
+  published with its `controller` set to the client's own `did:key` DID
+  -- the DID of the client's Ed25519 signing key -- rather than the
+  account DID. The method's `id` is unchanged by the marker.
+* No other verification method carries the marker. Signing methods MUST
+  keep the account DID as `controller` (a proof verifies against the
+  controller the method names, and the account's proofs name the
+  account). A `keyAgreement` method that belongs to no enrolled client,
+  such as a recovery key, MUST keep the account DID as `controller`, so
+  client listings and revocation removals never match it structurally.
+* The marked key MUST be the canonical X25519 twin of the client's
+  signing key, by the conversion of [[[#recipient-derivation]]]. An
+  enrollment offering a key-agreement key that is not that twin MUST be
+  refused before anything is published. The marker asserts that the
+  key-agreement key belongs to that signing key; the twin check is what
+  makes the assertion true of every method a conforming wallet
+  publishes.
+
+On the read side:
+
+* A client's key-agreement key is the `keyAgreement` method whose
+  `controller` equals the client's `did:key` DID. A client with no
+  marked method has no resolvable key-agreement key; a reader MUST NOT
+  fall back to deriving the twin. Refusing beats guessing: a guessed
+  key would let a removal report success over a method still in the
+  document.
+* A removal MUST remove every `keyAgreement` method whose `controller`
+  matches the removed client's `did:key` DID -- the full set, not a
+  first match -- so a client that published more than one is fully
+  retired.
+
+The marker makes the document agree with the roster's `kid` shape. A
+recipient `kid` is `did:key:z6Mk...#z6LS...`
+([[[#recipient-derivation]]]): the controller DID, then its derived
+twin as the fragment. Under the marker, the document's `keyAgreement`
+method for that client carries exactly that controller DID. The DID
+half of a recipient's key id and the `controller` of its published
+method state the same fact, so a reader moving between the roster and
+the document never needs a pairing table.
 
 ## Pinned derivation inputs {#pinned-inputs}
 
@@ -1101,7 +1240,7 @@ service.
 
 A served point-state descriptor carries nothing that lets a client
 detect the replay of an entire prior consistent configuration -- the
-server's rails bind its own storage, not what it chooses to serve.
+server's checks bind its own storage, not what it chooses to serve.
 Deployments needing rollback protection keep client-side monotonic
 state (an epoch pin) or adopt the
 log form, whose hash chain and pinned head make any rollback a chain
@@ -1140,4 +1279,4 @@ and compound structure describe the collection's data model. That is
 why `indexSchema` lives inside the encrypted Collection Metadata
 envelope ([[[#index-schema]]]) rather than in the plaintext
 Collection Description, and why the descriptor's `hmac` member
-carries a key id and wrapped bytes only, never attribute names.
+carries a key id and wrapped bytes only, with no attribute names.
