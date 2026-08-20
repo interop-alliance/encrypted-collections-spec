@@ -99,6 +99,19 @@ construction is named as such in each implementing package's CHANGELOG.
 | was-teaching-server | The server-visible halves: descriptor shape rails and the `Key-Epoch` stamp surfaces. |
 | was-conformance-suite | `encryption-descriptor-api` and the key-epoch checks in `client-spaces` validate the server-visible halves. |
 
+## Ecosystem conventions
+
+- Cross-repo lessons (invariants, gotchas, and process recipes that span
+  repos) live in the ecosystem learnings file,
+  [byoe-ecosystem/LEARNINGS.md](https://github.com/interop-alliance/byoe-ecosystem/blob/main/LEARNINGS.md)
+  (usually checked out beside this repo as `../byoe-ecosystem`); read it at
+  the start of any cross-repo task.
+- Decisions about the contract this spec owns (profile and wire-contract
+  decisions) are recorded in this repo's [decisions/](decisions/) directory,
+  one `NNNN-slug.md` file per decision; the convention and template are
+  canonical in
+  [isomorphic-lib-template's `decisions/`](https://github.com/interop-alliance/isomorphic-lib-template/tree/main/decisions).
+
 ## Reference material (read-only, outside this repo)
 
 These are separate repositories. Ground spec prose against real behavior --
