@@ -21,7 +21,8 @@ server-visible half defined by [[WAS]].
 | Specification                                                  | Relationship                                                                                                                                                                                                                                                                                                                                                                           |
 |----------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | [[WAS]]                                                        | The storage substrate: Spaces, Collections, Resources, the `encryption` descriptor slot, the Encryption Scheme Registry's `edv` envelope validation, conditional writes, the `changes` feed. This profile's server-visible halves ([descriptor shape validation](https://w3c-ccg.github.io/wallet-attached-storage-spec/#epoch-data-model), the epoch stamp surfaces, the [`blinded-index` query profile](https://w3c-ccg.github.io/wallet-attached-storage-spec/#query-profile-blinded-index) with its unique-attribute enforcement) are defined there.                                                                                |
-| [[APP-CONNECT]]                                                | The companion profile by which an application obtains capabilities into a wallet's Space. It defers to this profile for the encrypted-collection construction: the epoch roster, the envelope format, recipient-key derivation, and the definition of an epoch-roster recipient. Its Resource Log Profile defines the log form of the resources this profile shapes ([[[#log-form]]]). |
+| [[APP-CONNECT]]                                                | The companion profile by which an application obtains capabilities into a wallet's Space. It defers to this profile for the encrypted-collection construction: the epoch roster, the envelope format, recipient-key derivation, the definition of an epoch-roster recipient, and the [=resource log=] profile under which its enrolled clients co-manage key resources ([[[#resource-log-profile]]]). |
+| [[DID-WEBVH]]                                                  | The log format the [=resource log=] profile is extracted from ([[[#log-webvh]]]), and one method a Space controller's [=controller document=] may be verified under. Nothing outside that profile depends on it. |
 | [Encrypted Data Vaults](https://identity.foundation/edv-spec/) | The envelope vocabulary: the Encrypted Document shape, the JWE recipients structure, and the blinded-index model this profile's envelopes reuse verbatim.                                                                                                                                                                                                                              |
 
 ### Key epochs and eras {#epochs-and-eras}
@@ -179,13 +180,14 @@ acceptance branch for either anywhere in the profile:
   user-key roster. One machine hosts many clients (browser profiles,
   several apps, several accounts); a client is not tied to hardware.</dd>
 
-  <dt><dfn data-lt="controller document">account controller
+  <dt><dfn data-lt="controller document|controller documents|log controller document">account controller
   document</dfn></dt>
   <dd>The DID document [[DID-CORE]] of the [=Space=]'s controller,
   independently resolved and verified by the client per the controller
   DID's method. The source of record for which [=wallet clients=] an
   account has and which key-agreement keys back the user-key roster's
-  recipients ([[[#roster-recipients]]]).</dd>
+  recipients ([[[#roster-recipients]]]), and the root of authority for
+  every [=resource log=] ([[[#log-authorization]]]).</dd>
 
   <dt><dfn data-lt="collection owner">owner</dfn></dt>
   <dd>The controller of the [=Space=] a [=collection=] lives in. Always a
@@ -196,6 +198,11 @@ acceptance branch for either anywhere in the profile:
   <dt><dfn data-lt="collections">collection</dfn></dt>
   <dd>A WAS
   [Collection](https://w3c-ccg.github.io/wallet-attached-storage-spec/#dfn-collections)
+  [[WAS]].</dd>
+
+  <dt><dfn data-lt="resources">resource</dfn></dt>
+  <dd>A WAS
+  [Resource](https://w3c-ccg.github.io/wallet-attached-storage-spec/#resources-and-blobs)
   [[WAS]].</dd>
 
   <dt><dfn data-lt="Spaces">Space</dfn></dt>
@@ -220,8 +227,8 @@ conforming descriptor in which any of them is absent.
   An absent `version` means `1`. This document describes version `1`.
 * `type` (OPTIONAL) - The string `WasEpochConfiguration`, the descriptor's
   schema identifier under the log form ([[[#log-form]]]). Inside a log
-  entry's `state` the member is REQUIRED by the Resource Log Profile
-  [[APP-CONNECT]]. A point-state projection served beside a log carries
+  entry's `state` the member is REQUIRED ([[[#log-entry]]]). A
+  point-state projection served beside a log carries
   the same member, so that the projection equals the verified head's
   `state` once `history` is stripped. A descriptor no log governs MAY
   omit it.
@@ -234,8 +241,8 @@ conforming descriptor in which any of them is absent.
   descriptor, and `method`, an echo of the log's format identifier,
   named to mirror the in-log `parameters.method`. The member appears only
   on the point-state projection of a log-governed collection, not
-  inside a log entry's `state` -- the Resource Log Profile reserves the
-  name there [[APP-CONNECT]]. The hint is never authoritative: the log's
+  inside a log entry's `state` -- the log resource reserves the
+  name there ([[[#log-resource]]]). The hint is never authoritative: the log's
   own genesis commits the format identifier, and a served `method` that
   contradicts it is refused, not dispatched on.
 * `hmac` (OPTIONAL) - The collection's [=blinding key=]: its permanent
@@ -425,9 +432,9 @@ close that gap, neither of them carried in the descriptor itself:
 * The log form of the descriptor ([[[#log-form]]]) makes the whole
   [=epoch configuration=] proof-carrying: each entry's Data Integrity
   proof establishes that the configuration was written by a writer the
-  deployment's root of trust vouches for -- so a host-minted
-  configuration fails verification -- and the hash chain with a pinned
-  head makes any rollback a chain break.
+  deployment's root of trust vouches for ([[[#log-authorization]]]) --
+  so a host-minted configuration fails verification -- and the hash
+  chain with a pinned head makes any rollback a chain break.
 
 A deployment on pure point state keeps the server's shape checks
 (append-only `epochs`, monotonic `currentEpoch`) and the pin; only the
@@ -933,15 +940,29 @@ asymmetry in replication latency only -- never a lost write, and
 invisible to the local writer.
 </div>
 
-## Point state and log form {#log-form}
+## The resource log profile {#resource-log-profile}
+
+This section defines the [=resource log=], a hash-linked log format, derived
+from the `did:webvh` log format [[DID-WEBVH]], and used for key resources
+co-managed between a wallet's clients and the storage server: the
+[=encryption descriptors=] of this profile and the [=user key=] rosters
+beside them ([[[#user-key-roster]]]). It covers the entry format, entry
+hashing, chain verification, the external-authorization rule, client-side head
+pinning, and the terminal handover entry. It deliberately does not contain any
+key management of its own: a resource log carries no keys, and every entry is
+authorized against the log's [=controller document=] ([[[#log-authorization]]]).
+
+This document's own descriptors are the log's state. [[[#log-form]]]
+states how a descriptor is carried as log state. The subsections after it
+define the log itself.
+
+### Point state and log form {#log-form}
 
 An [=encryption descriptor=] as defined above is point state: the current
-configuration, served whole, its invariants enforced by the server. The
-companion App Connect profile defines a Resource
-Log Profile ([[APP-CONNECT]]) under which the same resources are governed
-as hash-linked logs of full-state entries, each entry proof-carrying and
-externally authorized -- and encryption descriptors are among its
-referencing profiles' state schemas.
+configuration, served whole, its invariants enforced by the server. Under
+the log form the same resource is governed as a hash-linked log of
+full-state entries, each entry proof-carrying and externally authorized,
+and the encryption descriptor is one of the log's state schemas.
 
 Under the log form:
 
@@ -961,21 +982,564 @@ Under the log form:
   entry chain rather than server-enforced rules.
 * Authorship of a configuration is established by the entry's Data
   Integrity proof, verified against the deployment's root of trust per
-  the Resource Log Profile's external-authorization rule; the entry
+  the external-authorization rule ([[[#log-authorization]]]); the entry
   proof covers the full [=epoch configuration=], and the hash chain
   with a pinned head makes any rollback a chain break -- the log form
   is what carries this profile's epoch-configuration integrity
   ([[[#epoch-integrity]]]).
 * A point-state descriptor served beside a log is a projection bound to
-  the log per the Resource Log Profile. The projection's `history` member
+  the log. The projection's `history` member
   names the governing log ([[[#descriptor-members]]]), and a verifying
   consumer acts only on a projection equal to the verified head's `state`
   after stripping `history` -- the one member the projection carries and
-  an entry's `state` never does.
+  an entry's `state` never does ([[[#log-resource]]]).
 
 Nothing in this profile's epoch rules depends on which framing carries
-the descriptor; a deployment adopts the log form per collection, by the
-referencing profile's rules.
+the descriptor; a deployment adopts the log form per collection.
+
+### Log model {#log-model}
+
+A <dfn data-lt="resource logs">resource log</dfn> is an append-only sequence
+of <dfn data-lt="log entry|log entries">log entries</dfn>, each carrying the
+full state of one co-managed [=resource=] at that point in its history. Each
+entry is hash-chained to its predecessor, and signed by the client that
+appended it. The current state of the resource is the state of the verified head
+entry; earlier entries exist so that any reader can verify how the resource got
+there, entirely client-side, against a host that (for threat modeling purposes)
+can be assumed adversarial.
+
+Three parties appear in this profile:
+
+* The [=controller document=] -- the DID document of the [=Space=]'s
+  controller, resolved
+  and verified by the reader independently of the storage server (for a
+  `did:webvh` controller, by fetching and verifying its own hash-chained log).
+  It is the log's root of authority; the set of keys that may authorize appends
+  is defined there and only there.
+* The **writers** -- [=enrolled clients=] (typically, the account's other
+  wallet installations; [[APP-CONNECT]] describes them informatively from
+  the connecting application's side), each
+  holding a key listed in the controller document. Any number of writers may
+  append; the profile assumes no coordination between them beyond the storage
+  server's [Conditional Request](https://w3c-ccg.github.io/wallet-attached-storage-spec/#conditional-requests)
+  compare-and-swap primitive (see [[[#log-append]]]).
+* The **host** -- the storage server holding the log resource. Under [[WAS]]
+  the host is trusted to enforce authorization on writes; this profile
+  deliberately does not lean on that trust. For log verification the host is
+  treated as a minimal store that linearizes concurrent appends and nothing
+  more, and every guarantee below must hold even against a host that serves
+  stale, forged, truncated, or forked logs.
+
+The log's identifier is self-certifying (the [=SCID=] in its genesis
+entry commits to the genesis content, so a host cannot substitute one log for
+another under the same identity, see [[[#log-hashing]]]), while its
+authority is externalized (no entry is valid on the log's own say-so;
+every entry's signer must be found in the externally verified controller
+document, see [[[#log-authorization]]]). The rationale for this split is given
+in [[[#log-rationale]]].
+
+### Relationship to `did:webvh` {#log-webvh}
+
+<div class="note">
+This subsection is non-normative.
+
+The profile is an extraction from `did:webvh` [[DID-WEBVH]], and the
+extraction is almost entirely subtractive:
+
+* **Kept verbatim:** the five-member entry shape (`versionId`, `versionTime`,
+  `parameters`, `state`, `proof`); JCS canonicalization; the
+  SHA-256-multihash, `base58btc` entry hash; the SCID-style self-certifying
+  genesis; the `eddsa-jcs-2022`-only proof rule; JSON Lines serialization.
+* **Deleted:** the in-log key management (`updateKeys`, `nextKeyHashes`
+  prerotation), witnesses, watchers, portability, deactivation, and the DID
+  document typing of `state`.
+* **Replaced:** the one verification step that consulted `updateKeys` -- the
+  authorization predicate -- is replaced by the external rule of
+  [[[#log-authorization]]].
+* **Added:** the [=entry anchor=] ([[[#log-proof]]]), the [=terminal entry=]
+  ([[[#log-handover]]]), and the [=chain-head pin=] semantics
+  ([[[#log-pin]]]).
+
+A did:webvh log answers to nobody -- it is a root of trust, so it must carry
+its own key state. A resource log answers to the account that owns it, so
+carrying its own key state would create a second root with no coherent
+precedence rule; see [[[#log-rationale]]].
+</div>
+
+### The log resource {#log-resource}
+
+A resource log is stored as a single [=resource=], serialized as JSON Lines
+[[JSON-LINES]]: one [=log entry=] as one JSON object per line, in order, first
+line first. Normatively, each line is a single JSON text [[RFC8259]]
+serialized without embedded newlines, and lines are separated by U+000A LINE
+FEED.
+
+The log resource is the only serving of the resource it governs: this
+profile defines no companion point-state document, and the governed
+resource's current state exists only as the `state` of the verified head
+entry ([[[#log-verification]]]).
+
+The member name `history` is reserved in entry state: a [=log entry=]'s
+`state` MUST NOT contain a `history` member.
+
+### Entry format {#log-entry}
+
+A [=log entry=] is a JSON object with exactly five members, all REQUIRED:
+
+| Member        | Value                                                                                                                                                                                                                                             |
+|---------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `versionId`   | `<n>-<entryHash>`: the entry's ordinal position `n` (decimal, starting at `1`), a single `-`, and the entry hash ([[[#log-hashing]]]).                                                                                                            |
+| `versionTime` | The append time as an [[RFC3339]] UTC datetime (`Z` suffix). **Advisory only**; see below.                                                                                                                                                        |
+| `parameters`  | A JSON object; see the per-entry rules below.                                                                                                                                                                                                     |
+| `state`       | The full resource state at this version: a JSON object that MUST carry a `type` member (a string) identifying its schema. State schemas are defined by the referencing profile, not by the log format; for this profile's descriptors the schema is `WasEpochConfiguration` ([[[#log-form]]]). |
+| `proof`       | A non-empty array of Data Integrity proofs ([[[#log-proof]]]).                                                                                                                                                                                    |
+
+A verifier MUST reject an entry carrying members other than these five.
+
+**`parameters` rules.** Unlike `did:webvh`, `parameters` do not evolve: format
+changes travel through the handover mechanism ([[[#log-handover]]]), and not
+through parameter mutation.
+
+* The genesis entry's `parameters` MUST carry `method` (the format
+  identifier, [[[#log-format-ids]]]) and `scid` (the [=SCID=]), and MAY carry
+  `previousLog` (successor logs only, [[[#log-handover]]]). No other member
+  is permitted.
+* Every other entry's `parameters` MUST be `{}`, with one exception: a
+  [=terminal entry=]'s `parameters` is exactly
+  `{ "nextLog": { "method": ..., "scid": ... } }` ([[[#log-handover]]]).
+* A verifier MUST reject an entry whose `parameters` carry any member this
+  profile does not define for that entry position. This is deliberate
+  fail-closed extensibility: the deleted `did:webvh` key-management
+  parameters, in particular, MUST NOT be accepted, so a served log can never
+  smuggle authorization semantics this profile removed.
+
+**`versionTime` is advisory.** A writer MUST set it to its best knowledge of
+the current time, and a verifier MUST NOT refuse an entry on temporal grounds
+-- not for being out of order with respect to its neighbors, and not for being
+in the future. Ordering authority rests entirely with the hash chain.
+
+<div class="note">
+This is a deliberate departure from `did:webvh`, which enforces strict
+monotonicity plus a future-skew bound. Under that rule, one appender with a
+fast clock produces an entry that later, correctly clocked appenders can never
+legally follow -- a permanently unresolvable log. did:webvh needs enforceable
+times for `versionTime`-based resolution; this profile offers no time-based
+resolution, so it keeps the member for display and audit and moves all
+ordering to the chain.
+</div>
+
+Example: a two-entry log (shown pretty-printed; on the wire each entry is
+one line; hash, DID, and key values are illustrative):
+
+```json
+{
+  "versionId": "1-QmUv7Yx3mvL2mLpp9pRgTvNqEcYtT7yiV1sfMx6xEBcCyD",
+  "versionTime": "2026-08-06T17:00:00Z",
+  "parameters": {
+    "method": "resource-log:0.1",
+    "scid": "QmXbWpS3fY9uNnQhJcM4kR8vT2eDgAqLx5oPiZsE6wHtUa"
+  },
+  "state": { "type": "WasEpochConfiguration", "...": "..." },
+  "proof": [{ "...": "..." }]
+}
+{
+  "versionId": "2-Qma8fN4kQjTr2vXwYhPzUdE9cLmB5oGsKiR7tD3eVpMnHx",
+  "versionTime": "2026-08-07T09:30:00Z",
+  "parameters": {},
+  "state": { "type": "WasEpochConfiguration", "...": "..." },
+  "proof": [{
+    "type": "DataIntegrityProof",
+    "cryptosuite": "eddsa-jcs-2022",
+    "proofPurpose": "assertionMethod",
+    "verificationMethod": "did:webvh:QmScid...:wallet-storage.example:space:81246131-69a4-45ab-9bff-9c946b59cf2e:id?versionId=6-QmDocVersion...#z6MkclientKey...",
+    "proofValue": "z..."
+  }]
+}
+```
+
+### Entry hashing and the SCID {#log-hashing}
+
+Canonicalization throughout this profile is JCS [[RFC8785]], over strict JSON
+values (no `undefined`, no non-finite numbers).
+
+**The hash serialization format.** Every hash this profile mints, including the
+entry hash, the [=SCID=], and the `scid` values carried in `nextLog` and
+`previousLog`, is serialized the same way: the SHA-256 digest of the
+canonicalized input, wrapped as a multihash (the bytes `0x12`, `0x20`, then the
+32 digest bytes), encoded with the `base58btc` alphabet, with **no** multibase
+prefix. This is byte-for-byte the `did:webvh` entry-hash format. It is
+deliberately NOT the `z`-prefixed multibase serialization, and NOT the
+`base64url`serialization used for content addressing elsewhere in [[WAS]];
+one format, chosen once, so a verifier never has to guess.
+
+**The entry hash.** The `entryHash` of entry `n` is the hash, as above, of the
+entry with its `proof` member removed and its `versionId` member replaced by
+the **predecessor's** `versionId` -- for the genesis entry, by the [=SCID=].
+The entry's own `versionId` is then `<n>-<entryHash>`. This is what makes the
+chain a chain: each entry's identifier is a commitment to its predecessor's
+identifier and transitively to the entire log back to genesis.
+
+**The genesis entry and the <dfn>SCID</dfn>** (self-certifying identifier).
+The genesis entry is built in two passes:
+
+1. Build the preliminary entry with the literal placeholder string `{SCID}`
+   as the value of both `versionId` and `parameters.scid` (and anywhere else
+   the SCID will appear). The SCID is the hash, as above, of this preliminary
+   entry.
+2. Replace every `{SCID}` placeholder with the SCID, then compute the entry
+   hash normally (`versionId` input value: the SCID). The genesis
+   `versionId` is `1-<entryHash>`.
+
+A verifier MUST recompute the SCID by the inverse procedure (substitute the
+log's `parameters.scid` value back to `{SCID}`, hash, compare) and MUST
+reject a log whose SCID does not verify.
+
+Because `parameters.method` is inside the hashed genesis content, the SCID
+commits to the format identifier: a host cannot downgrade a log's format
+without changing its identity. And because every later entry hash chains to
+the genesis through the `versionId` substitution rule, every entry hash in the
+system is transitively bound to that identifier. Together with the fixed
+five-member input shape, this is this profile's domain separation: no entry hash
+can collide with a hash minted over any other structure.
+
+### The entry proof and its anchor {#log-proof}
+
+Each element of an entry's `proof` array MUST be a Data Integrity proof
+[[VC-DATA-INTEGRITY]] with:
+
+* `type`: `DataIntegrityProof`
+* `cryptosuite`: `eddsa-jcs-2022` [[VC-DI-EDDSA]] -- no other cryptosuite is
+  permitted
+* `proofPurpose`: `assertionMethod`
+* `verificationMethod`: a DID URL identifying the signing key in the
+  [=controller document=], carrying the [=entry anchor=] described below
+* `proofValue`: the proof value per [[VC-DI-EDDSA]]
+
+The proof input is the complete entry, including its final `versionId`,
+with the `proof` member absent. Because the `versionId` is a commitment to
+the whole chain ([[[#log-hashing]]]), the signature covers the chain link;
+an entry cannot be re-parented without breaking its proof.
+
+A verifier MUST verify every proof in the array. One failing proof rejects
+the entry.
+
+**The <dfn data-lt="entry anchors|anchored version">entry anchor</dfn>.**
+Where the controller's DID method provides versioned document resolution (as
+`did:webvh` does), the proof's `verificationMethod` MUST carry a `versionId`
+DID parameter [[DID-CORE]] naming the controller-document version the entry
+was authorized under, e.g.
+`did:webvh:...:id?versionId=6-Qm...#z6Mk...`. The anchor is inside the
+signed proof options, so it cannot be altered without breaking the proof.
+Where the controller's document is unversioned (a static DID such as
+`did:key`), the anchor is omitted and every anchor rule below reads "the
+controller document".
+
+### Authorization {#log-authorization}
+
+An entry is authorized by exactly one rule:
+
+> Every proof's signing key MUST be listed as a verification method under the
+> `assertionMethod` relation of the [=controller document=] **at the
+> entry's anchored version**, where the controller document is resolved and
+> verified by the reader independently of the host serving the log.
+
+The rule's parts, unpacked, each normative:
+
+1. **The document comes from the reader's own verification, not from the
+   channel.** The verifier MUST resolve the controller document through its
+   own verified resolution pipeline, cryptographically verifying every step:
+   for a `did:webvh` controller, it fetches the controller log itself,
+   verifies it end-to-end (SCID, entry hash chain, proofs, and its own head
+   pin, where it keeps one), and answers the anchored-version lookup from
+   that verified history. A verifier MUST NOT obtain the signing key by
+   dereferencing the proof's `verificationMethod` URL as an ordinary
+   resource fetch, and MUST NOT accept controller-document material supplied
+   by the host outside that independently verified resolution -- the host
+   serving the resource log is the same party a doctored controller document
+   would come from. (In implementation terms: the document loader handed to
+   the proof-verification library answers DID URL lookups from the verified
+   controller log, not from the wire.)
+2. **The anchored version must be present.** The anchor MUST identify a version
+   present in the reader's verified controller log, at or before its head. An
+   anchor naming an unknown version rejects the entry.
+3. **Anchors are monotone along the log.** Each entry's anchored version MUST
+   be the same as, or a descendant of (for a linear controller log: at or
+   after), the previous entry's anchored version. An entry anchored behind
+   its predecessor rejects the log.
+4. **The relation is `assertionMethod`.** The log format's fixed proof shape
+   ([[DID-WEBVH]]) sets `proofPurpose: assertionMethod`, and Data Integrity
+   verification [[VC-DATA-INTEGRITY]] already requires a proof's verification
+   method to be authorized under the controller-document relation matching
+   the proof's purpose. The authorization rule uses that same relation, so
+   proof verification and authorization are one membership check, enforceable
+   with standard proof-verification tooling -- no second relation a signing
+   key must be dual-listed under, and no custom verifier overriding the
+   purpose-relation match. The flip side is that listing a key under
+   `assertionMethod` is precisely what entitles it to append: a controller
+   whose logs are governed by this profile MUST NOT list a key under
+   `assertionMethod` unless that key is entitled to co-manage the account's
+   governed resources. Keys listed under other relations only (a
+   `keyAgreement`-only recovery key, an `authentication`-only login key)
+   remain structurally excluded.
+
+**Writers anchor at their verified head.** A writer appending an entry MUST
+anchor it at the head of the controller document as the writer last verified
+it. Together with anchor monotonicity this yields the profile's historical
+verification: entries verify **as-of-append**. A client revoked from the
+controller document keeps its past entries verifiable (they anchor at
+versions where its key was present) while losing the ability to have new
+entries accepted under post-revocation anchors.
+
+**The sealing append.** After a controller-document change that removes a
+verification method, the controller's clients MUST ensure that each governed
+resource log receives at least one subsequent entry anchored at or after the
+new document version. Anchor monotonicity then makes the removal effective
+for that log: no later entry can anchor behind the seal, so the removed key
+can never validly append again. Until a log's sealing append operation lands,
+the removed key can still extend that log under a pre-removal anchor -- a
+residual window with the same shape, detection, and repair story as any other
+torn multi-resource ceremony. The staleness is visible in durable state (a
+log whose head anchor predates the membership change), and re-running the
+sealing pass will converge on the same state.
+
+<div class="note">
+In the wallet ceremonies this profile serves, the sealing append is not an
+extra write: revoking a client already rotates every encrypted collection to
+a new key epoch, and each rotation is itself a state change appended to the
+governed log, anchored at the post-revocation document version.
+</div>
+
+### Chain verification {#log-verification}
+
+A verifier MUST run the following checks over the full log, in order, and
+MUST treat any failure as rejecting the log (not just the failing entry).
+A verifier MUST NOT accept any stated or served head, digest, or count in
+place of recomputing from the entries themselves.
+
+1. **Parse.** Parse the resource as JSON Lines ([[[#log-resource]]]).
+   Reject on any non-object line, on any entry violating [[[#log-entry]]]
+   (member set, `parameters` rules, `state.type`), and on any `versionId` whose
+   ordinal is not the entry's 1-based position.
+2. **Genesis.** Recompute and check the [=SCID=] ([[[#log-hashing]]]).
+   Check that `parameters.method` names a format this verifier implements
+   ([[[#log-format-ids]]]); where a [=chain-head pin=] or the referencing
+   profile supplied an expected method, check that it matches.
+3. **Chain.** For each entry, recompute the entry hash from the
+   predecessor-substituted input and check it against the `versionId`.
+4. **Proofs.** For each entry, verify every proof per [[[#log-proof]]].
+5. **Authorization.** For each entry, apply [[[#log-authorization]]]:
+   resolve the anchor against the independently verified controller
+   document, check `assertionMethod` membership of every signing key,
+   and check anchor monotonicity.
+6. **Termination.** If any entry is a [=terminal entry=], check that it is
+   the last entry; reject a log with entries after a terminal entry, and
+   refuse to append past one ([[[#log-handover]]]).
+7. **Continuity.** Compare the verified head against the [=chain-head pin=],
+   where one is held ([[[#log-pin]]]).
+
+The resource's current state is the verified head entry's `state`.
+
+<div class="note">
+Full verification is a wallet-to-wallet concern: it is run by [=enrolled
+clients=] co-managing governed resources against a host they do not trust for
+them. An application connecting under [[APP-CONNECT]] never runs it -- the
+application verifies the response presentation and invokes its
+capabilities; it does not read these logs. In wallet
+workflows, verification runs:
+
+* before any append -- a writer extends only a head it has verified
+  ([[[#log-append]]]), so every state-changing ceremony (a key-epoch
+  rotation, the sealing append after a client revocation, a handover) begins
+  with a verification pass;
+* before acting on current state -- a client coming back online, or a second
+  enrolled wallet syncing, verifies before trusting a served roster or epoch,
+  since current state is defined only as the verified head's `state`;
+* at first contact -- a newly enrolled client bootstrapping onto the
+  account's governed resources verifies to establish its [=chain-head pin=]
+  ([[[#log-pin]]]);
+* on return visits -- re-verification against the held pin is where host
+  rollback, truncation, and forks are detected (step 7).
+</div>
+
+### Appending {#log-append}
+
+Appending is linearized by the host's compare-and-swap (CAS) primitive
+(conditional writes on the log resource's entity tag, per [[WAS]]); the chain
+itself carries no consensus mechanism, and none is needed: concurrent writers
+produce a CAS conflict as opposed to a fork.
+
+Conditional writes are an optional feature in [[WAS]]. A host serving
+resource logs MUST support them: the backend holding the log MUST advertise
+the `conditional-writes` feature, and a writer MUST NOT fall back to an
+unconditional write against a backend that does not. Without the
+precondition, concurrent appends silently overwrite one another instead of
+failing into the retry loop below.
+
+A writer MUST:
+
+1. Read the full log and verify it per [[[#log-verification]]] -- an entry
+   is never built on an unverified head.
+2. Build the new entry against the verified head (full state, hash, anchor,
+   proof) and write the extended log conditionally on the entity tag of the
+   read from step 1.
+3. On a conditional-write conflict: re-read, re-verify, rebase the change on
+   the new head, and retry.
+4. **Confirm by reading back.** A write acknowledgement is a promise, not a
+   fact: the writer MUST read the log back and verify that the extended,
+   verified log contains its entry before treating the append -- or any
+   ceremony step gated on it -- as durable.
+
+### Head pinning {#log-pin}
+
+A reader that returns to a log across sessions MUST keep a <dfn
+data-lt="chain-head pins">chain-head pin</dfn> per log: the log's format
+identifier (`parameters.method`), its [=SCID=], and the `versionId` of the
+latest verified head. The pin is client-local durable state; where it is
+stored and how it is protected are left up to client implementers.
+
+* The pin is established at **first contact**: the first full verification of
+  a log the reader has no pin for. First contact is trust-on-first-use, and
+  what it establishes is the log's identity (the SCID); see
+  [[[#log-trust-bounds]]] for the limits and implications.
+* The pin is updated only after a full verification ([[[#log-verification]]])
+  of a log whose head is the pinned head or a descendant of it, or after a
+  verified handover ([[[#log-handover]]]), which replaces the pin with the
+  successor's (method, SCID, head).
+* A served log whose SCID or method differs from the pin, outside a verified
+  handover, MUST be refused as a continuity break.
+* A served log whose head is behind the pin (the pinned head's ordinal
+  exceeds the served head's, with the served log an ancestor-prefix of what
+  was pinned) is reconcilable divergence -- possibly replication lag. The
+  reader MUST NOT adopt it and MUST NOT regress its pin; it MAY retry.
+* A served log that has **forked** -- it shares a prefix with the pinned
+  history but diverges at some version, so neither is an ancestor of the
+  other -- MUST be refused, and the reader SHOULD retain both the served log
+  and its pinned evidence: every entry is signed, so a conflicting pair of
+  logs under one SCID is transferable, independently verifiable evidence of
+  equivocation.
+
+A pin record MAY carry an extensible set of attached proofs (for example, a
+host-signed checkpoint, or witness co-signatures adopted later as policy),
+under the rule that a reader ignores proofs it cannot attribute. This lets
+stronger continuity evidence be layered on without a format change. A reader
+MAY additionally render the pinned head as a short human-comparable
+fingerprint for out-of-band comparison between clients.
+
+### The terminal handover entry {#log-handover}
+
+One mechanism serves both log compaction (truncating a long history) and
+format migration (moving to a successor format): a signed, in-chain
+<dfn data-lt="terminal entries">terminal entry</dfn> that closes the log and
+names its successor.
+
+* A terminal entry is an ordinary entry ([[[#log-entry]]], [[[#log-proof]]],
+  [[[#log-authorization]]] all apply) whose `parameters` is exactly
+  `{ "nextLog": { "method": ..., "scid": ... } }`: the successor log's format
+  identifier and its [=SCID=]. Its `state` MUST equal its predecessor's
+  `state` -- a handover changes no resource state.
+* The successor log's genesis `parameters` additionally carries
+  `previousLog: { "scid": ..., "head": ... }`: the prior log's SCID and the
+  `versionId` of the prior log's last regular entry -- the terminal entry's
+  predecessor. (The reference cannot name the terminal entry itself: the
+  terminal entry commits to the successor's SCID, so the successor's genesis
+  must exist first.)
+* For a compaction, the successor's genesis `state` is the full current
+  state, so the successor log stands alone; the prior log may then be
+  retained or discarded as evidence policy dictates.
+
+A verifier crossing a handover MUST check the link from both sides: the
+terminal entry's `nextLog.scid` equals the successor's SCID and the methods
+are consistent with what each log's own genesis declares; the successor's
+`previousLog.scid` equals the prior log's SCID; and the successor's
+`previousLog.head` equals the `versionId` of the terminal entry's immediate
+predecessor -- that is, the terminal entry chains directly off the head the
+successor references. A successor served without this verifiable link MUST be
+refused as a continuity break.
+
+Every verifier of this profile MUST recognize terminal entries and MUST
+refuse to append past one -- even though nothing currently emits them. This
+is what makes the mechanism a safe migration path: a v1 verifier meeting a
+handed-over log refuses to extend the frozen log, rather than continuing a
+history its author has closed.
+
+### Format identifiers {#log-format-ids}
+
+The format identifier for this profile is the byte-significant string
+`resource-log:0.1`. The identifier is compared only for byte equality
+and never parsed: the `0.1` is part of the opaque identifier, not an
+orderable version number. A future revision of this profile is a different
+identifier reached only through the handover mechanism
+([[[#log-handover]]]), not a "greater version" of this one.
+
+The identifier appears at two seams plus the pin, with a strict
+authority ordering:
+
+1. **Authoritative:** `parameters.method` in the genesis entry. It is
+   SCID-committed and proof-covered ([[[#log-hashing]]]), which makes it the
+   only downgrade-safe location: a host cannot alter it without changing the
+   log's identity and breaking its genesis proof.
+2. **Payload schema:** the `state` document's own `type` member
+   ([[[#log-entry]]]) -- the resource schema, versioned by the referencing
+   profile independently of the log format.
+3. **The pin:** the [=chain-head pin=] stores the method beside the SCID and
+   head, so a served format switch outside the handover mechanism
+   ([[[#log-handover]]]) is refused as a continuity break rather than
+   dispatched to a different verifier.
+
+### Design rationale: externalized log authorization {#log-rationale}
+
+<div class="note">
+This subsection is non-normative.
+
+The obvious challenge to this design: self-sovereignty is the prestige
+property of hash-linked logs (it is what makes `did:webvh` and its
+relatives valuable), so why is a resource log deliberately NOT its own
+root of trust, carrying its own key set the way an identity log does?
+
+Because self-sovereignty is the right design exactly when a log's writers
+share no pre-existing root of authority. A resource log is the opposite case:
+its writer set is *defined as* the account's enrolled clients, which already
+have a self-sovereign home in the controller document. Making each log its
+own root would not add sovereignty; it would copy the client roster into N
+places and then have to keep the copies consistent.
+
+**Revocation atomicity is what in-log key management would break.** Under the
+external rule, revoking a client is one controller-document edit, and that
+single edit is the revoked client's pull axis everywhere: every delegation,
+every invocation, and every log-append right dies against the same document.
+If each log carried its own `updateKeys`, revocation would become a rotation
+ceremony per log, and a crash mid-ceremony would leave the revoked client
+durably authorized on the remainder -- a drift-detection problem created
+purely by the duplication. (The sealing append of [[[#log-authorization]]]
+narrows per-log windows too, but its failure mode is detectable staleness
+that a re-run repairs -- not standing authorization that must be hunted
+down.)
+
+**Two roots of trust have no coherent precedence rule.** If a log's in-log
+key set and the controller document could disagree, one of them wins. If the
+document wins, the in-log keys are dead weight -- maintenance surface with no
+authority. If the in-log keys win, the document's revocation didn't revoke,
+and a compromised client can entrench itself in whichever logs it can still
+rotate. Every answer makes in-log key management either vestigial or a hole.
+A KEL never faces this because it answers to nobody; a log subordinate to an
+account cannot be half-sovereign.
+
+**The genuine benefit of full self-certification has no audience here.** A
+standalone-verifiable log matters when third parties consume it without
+account context -- which is why the identity log is self-certifying. An
+encryption descriptor or key roster is meaningless outside its account, and
+its only readers already fetch and verify the controller document for other
+reasons, so "verify the controller first" adds zero marginal cost. The cheap
+half of self-certification is kept anyway: the SCID genesis makes each log's
+*identity* self-certifying, so a host cannot swap logs under an id. That
+split -- self-certifying identity, externalized authority -- is the design.
+
+The rule generalizes before it breaks: if a future resource's writers span
+several accounts, the authorization predicate becomes "the signer is in any
+of the named controllers' verified documents" -- still external. Only a log
+whose membership must evolve with no controlling document anywhere truly
+needs to be its own root, and no such log exists in this system.
+</div>
 
 ## Recipient-key derivation {#recipient-derivation}
 
@@ -1115,8 +1679,8 @@ their [=key-agreement keys=] resolve from the verified
   -- a converging operation a re-run completes, with no per-client
   pairing state required beyond the document itself.
 * Where the roster is log-governed, that post-edit rotation is anchored
-  at or past the edit, satisfying the sealing rule the Resource Log
-  Profile imposes after an authorized-writer removal [[APP-CONNECT]].
+  at or past the edit, satisfying the sealing rule imposed after an
+  authorized-writer removal ([[[#log-authorization]]]).
 
 ### The keyAgreement controller marker {#keyagreement-controller-marker}
 
@@ -1245,6 +1809,45 @@ Deployments needing rollback protection keep client-side monotonic
 state (an epoch pin) or adopt the
 log form, whose hash chain and pinned head make any rollback a chain
 break ([[[#log-form]]]).
+
+### Resource log trust bounds {#log-trust-bounds}
+
+The [=resource log=] profile ([[[#resource-log-profile]]]) is designed against
+a host that serves stale, forged, truncated, or forked logs, and its
+guarantees come entirely from client-side recomputation: the chain from the
+[=SCID=] forward, every proof, and every authorization check against the
+independently verified [=controller document=]. Nothing served -- a stated
+head, a digest, a count -- is accepted without the log confirming it.
+
+Three attacks remain outside the model, and stating them is part of the design:
+
+**First-contact substitution.** A reader with no [=chain-head pin=] for a log
+accepts whichever verifying log the host serves first. The SCID prevents
+substitution *under a known identity*, and the authorization rule means any
+substitute must still be signed entirely by the account's own enrolled keys --
+so what first contact actually risks is being shown a stale or truncated
+history that genuine writers produced, not a forged one. From the pin onward,
+rollback and forks are refused.
+
+**Per-client equivocation.** A host can serve different (individually valid)
+extensions of one log to different clients that have not compared pins. Each
+client's own pin keeps its own view consistent; the gap is cross-client. The
+mitigations are layered rather than structural: any two clients that ever
+compare heads (or exchange logs) hold transferable, independently verifiable
+evidence of the equivocation, since every entry is signed and both logs claim
+one SCID ([[[#log-pin]]]); and the pin's extensible proof set leaves room for
+witness cosignatures as a policy upgrade without a format change. Writers are
+better protected than pure readers: the append procedure's read-back
+confirmation ([[[#log-append]]]) means a host that hides one writer's entry
+from another forces a visible CAS conflict or a visible missing entry, not a
+silent split.
+
+**The revocation window.** Between a membership-removing controller-document
+edit and a given log's sealing append ([[[#log-authorization]]]), the removed
+key can still extend that log under a pre-removal anchor. The window is the
+same one any multi-resource revocation cascade has; what the profile adds is
+that the window's state is durably visible (a head anchor predating the
+membership change) and closes idempotently by re-running the seal.
 
 ### The blinding key survives removal {#blinding-key-removal}
 

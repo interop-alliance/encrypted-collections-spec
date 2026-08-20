@@ -34,6 +34,16 @@
           href: "https://w3c-ccg.github.io/did-key-spec/",
           publisher: "W3C Credentials Community Group"
         },
+        "DID-WEBVH": {
+          title: "The did:webvh DID Method",
+          href: "https://identity.foundation/didwebvh/",
+          publisher: "Decentralized Identity Foundation"
+        },
+        "JSON-LINES": {
+          title: "JSON Lines",
+          href: "https://jsonlines.org/",
+          authors: ["Ian Ward"]
+        },
         "EDV": {
           title: "Encrypted Data Vaults",
           href: "https://identity.foundation/edv-spec/",
@@ -65,8 +75,10 @@
     Data Vault envelope format with its AEAD-bound <code>was</code> integrity
     binding; epoch-configuration authentication; recipient management by
     escrow and rotate-first removal; the blinded index for equality
-    queries over encrypted content; and the deferred-minting rules for
-    local-first writers. The storage server needs nothing beyond WAS and
+    queries over encrypted content; the deferred-minting rules for
+    local-first writers; and the resource log profile, the hash-linked,
+    externally authorized log form under which descriptors and key
+    rosters are co-managed by a wallet's clients. The storage server needs nothing beyond WAS and
     never holds key material.
   </p>
 </section>
