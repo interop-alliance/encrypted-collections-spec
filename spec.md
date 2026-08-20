@@ -380,7 +380,7 @@ Serialization recipient shape ([[RFC7516]] section 7.2) verbatim:
 * `encrypted_key` (REQUIRED) - The wrapped payload: the raw 32-byte
   [=epoch secret=], key-wrapped to the recipient's key-agreement key
   (ephemeral-static ECDH, the [[RFC7518]] Concat KDF, [[RFC3394]] AES
-  key wrap).
+  key wrap), byte-exactly the derivation of [[[#key-wrap-kdf]]].
 
 Nothing secret appears in the descriptor: recipient entries hold public
 key identifiers and wrapped-key ciphertext only. The server never holds
@@ -467,8 +467,7 @@ validation of it are the `edv` scheme registration of [[WAS]]'s Encryption
 Scheme Registry.
 
 The plaintext document carried inside the JWE declares its own inner
-content type: `{ "contentType": ... }` for JSON content, plus
-`"encoding": "utf-8"` for text or `"encoding": "base64"` for binary.
+content type and encoding ([[[#plaintext-document]]]).
 Nothing user-visible -- content, plaintext type, user metadata -- appears
 outside the ciphertext. The one plaintext-derived exception is the
 opaque blinded tokens of an [=indexable=] collection's `indexed`
@@ -480,6 +479,47 @@ epoch it sealed under ([[[#epoch-id]]]). A conforming writer MUST NOT
 name any other recipient -- per-reader access rides the epoch roster, not
 per-envelope wraps -- and MUST NOT seal an envelope to any key that is not
 an epoch key ([[[#single-epoch-era]]]).
+
+### The plaintext document {#plaintext-document}
+
+The JWE plaintext is the UTF-8 JSON serialization of a document object
+with the following members, and no others (a chunked document
+additionally seals its `stream` state; see the `"chunked"` row below):
+
+* `content` (REQUIRED) - The sealed content, in the shape `meta.encoding`
+  selects (below).
+* `meta` (REQUIRED on a content envelope) - A JSON object describing
+  `content`:
+  * `contentType` (REQUIRED) - The media type of the plaintext content,
+    a string (`application/json` for JSON content written without a
+    declared type).
+  * `encoding` (OPTIONAL) - How `content` carries the plaintext. A
+    writer MUST use exactly one of the values below, and a reader MUST
+    refuse a value it does not recognize rather than fall back to any
+    interpretation of `content`.
+
+`meta.encoding` and `content` are paired as follows:
+
+| `meta.encoding` | `content` |
+| --- | --- |
+| absent | The JSON value itself, verbatim: the caller's JSON object or array. |
+| `"utf-8"` | `{ "text": ... }`: the plaintext as one JSON string. Used for text-family media types whose bytes are valid UTF-8. |
+| `"base64"` | `{ "bytes": ... }`: the plaintext bytes in standard base64 ([[RFC4648]] section 4, the `+` and `/` alphabet, padded). This is distinct from the unpadded base64url of the JWE members (`jwe.ciphertext`, `epk.x`, `apu`, `apv`, `encrypted_key`); a reader MUST NOT decode the two with one alphabet. Used for binary content, and for text-family content whose bytes are not valid UTF-8. |
+| `"chunked"` | `{}`: the document's bytes are not inline; they live in the resource's chunk resources ([[WAS]]'s chunked streams). The chunked document form is not otherwise specified by this document. |
+
+An absent `meta.encoding` means JSON. A reader MUST select the `content`
+shape from `meta.encoding` alone and MUST NOT infer an encoding from the
+shape of `content`: a caller object that happens to be `{ "text": "..." }`
+or `{ "bytes": "..." }`, written as JSON, round-trips as that JSON object.
+The writer's `meta.encoding` is the only in-band discriminator, and it is
+inside the AEAD.
+
+A metadata envelope -- the encrypted `custom` object of a resource's or
+the Collection's metadata ([[[#was-binding]]]) -- seals the `custom`
+object itself as `content`, verbatim, and carries no `meta`: the
+`custom` object is always JSON, and the absent-`encoding` rule above
+applies. A reader of a metadata envelope MUST treat its `content` as the
+`custom` object, whatever shape it has.
 
 ### Algorithms {#algorithms}
 
@@ -495,6 +535,60 @@ an epoch key ([[[#single-epoch-era]]]).
   across re-encryptions of identical plaintext -- deduplication keys on
   decrypted content identity rather than on envelope bytes or resource
   id.
+* Content-encryption key length: 32 bytes (256 bits), for `XC20P`, `C20P`,
+  and `A256GCM` alike. The wrapped `encrypted_key` of an envelope recipient
+  is therefore always a 40-byte AES key wrap output.
+
+#### The key-wrap derivation {#key-wrap-kdf}
+
+The `ECDH-ES+A256KW` wrap is used in two places with one construction:
+sealing an envelope's content-encryption key to the [=epoch key=] (the
+JWE recipient of [[[#stored-envelope]]]), and wrapping an [=epoch secret=]
+to a reader's [=key-agreement key=] (a recipient entry of
+[[[#recipient-entry]]]). In both, the shared secret `Z` is the X25519
+agreement between a fresh ephemeral key pair and the static recipient
+key, and the key-encryption key is derived by the [[RFC7518]] Concat KDF
+(section 4.6.2) with SHA-256, in a single round, from exactly these
+inputs:
+
+* `AlgorithmID` - The UTF-8 bytes of the string `ECDH-ES+A256KW` (the
+  `alg` value, not the content-encryption `enc`), 14 bytes.
+* `PartyUInfo` - The raw 32 bytes of the ephemeral X25519 public key.
+* `PartyVInfo` - The UTF-8 bytes of the static recipient key's id: the
+  string carried as the recipient's `kid` (the epoch key id for an
+  envelope, [[[#epoch-id]]]; the reader's key-agreement key id for a
+  roster entry).
+* `SuppPubInfo` - The key data length, 256, as a 32-bit big-endian
+  integer.
+* `SuppPrivInfo` - Empty.
+
+Each of `AlgorithmID`, `PartyUInfo`, and `PartyVInfo` is encoded as its
+byte length, a 32-bit big-endian integer, followed by the bytes
+themselves ([[RFC7518]] section 4.6.2's `Datalen || Data` form). The
+hashed input is thus
+
+```
+uint32be(1) || Z || uint32be(14) || "ECDH-ES+A256KW"
+           || uint32be(32) || ephemeral public key
+           || uint32be(len(kid)) || kid
+           || uint32be(256)
+```
+
+and the 256-bit SHA-256 output is, without truncation or further
+derivation, the [[RFC3394]] AES key wrap key.
+
+The inputs travel in the recipient `header`: `epk` is the ephemeral
+public key as a JWK (`{ "kty": "OKP", "crv": "X25519", "x": ... }`
+[[RFC8037]]), `apu` is the unpadded base64url of `PartyUInfo`, and
+`apv` is the unpadded base64url of `PartyVInfo`; every base64url value
+in the header, `x` and `encrypted_key` included, is unpadded. A writer
+MUST emit `epk`, `apu`, and `apv`. An unwrapper derives `PartyUInfo`
+from `epk.x` and `PartyVInfo` from its own knowledge of the key the
+`kid` names -- it does not take either from `apu` or `apv`, which are
+carried for interoperability with a generic [[RFC7518]] recipient and
+are not inputs a reader trusts. A header whose `apu` or `apv` disagrees
+with the recomputed values therefore fails as an unwrap failure, not as
+a distinct refusal.
 
 ### Content-derived resource ids {#content-ids}
 
@@ -553,9 +647,16 @@ MUST verify the `was` binding. The checks, in order, all unconditional:
    binds `was` at encrypt time, so its absence means a writer this scheme
    does not admit. There is no unbound-envelope acceptance
    ([[[#single-epoch-era]]]).
-2. A `was.v` greater than the scheme version the reader implements is
-   refused: a future-scheme envelope this reader does not understand.
-3. When the read targeted a known resource id (a content or resource
+2. A `was.v` that is absent, or present but not a JSON number, is
+   refused like a missing `was`: an envelope that does not declare its
+   scheme version is outside the profile. There is no default version to
+   assume.
+3. A `was.v` greater than the scheme version the reader implements is
+   refused: a future-scheme envelope this reader does not understand. The
+   version the reader implements is the one the collection's descriptor
+   declares (its `version`, [[[#descriptor-members]]]), which the reader
+   has already confirmed it supports before building any cipher.
+4. When the read targeted a known resource id (a content or resource
    metadata read): a present `was.collection` is refused before any id
    comparison (the Collection's metadata envelope was served in a
    resource slot). A string `was.resource` MUST equal the targeted id (a
@@ -564,7 +665,7 @@ MUST verify the `was` binding. The checks, in order, all unconditional:
    write, and the id re-derived from its ciphertext ([[[#content-ids]]])
    MUST equal the targeted id (a mismatch means the envelope was served
    under an id it was not written for).
-4. When the read targeted the Collection Metadata slot: a present
+5. When the read targeted the Collection Metadata slot: a present
    `was.resource` is refused (a resource's envelope was served in the
    Collection's slot), and a string `was.collection` MUST be present and
    equal the id of the Collection the read addressed. A missing
@@ -572,17 +673,20 @@ MUST verify the `was` binding. The checks, in order, all unconditional:
    content-derived content envelope, whose member set is otherwise
    identical -- and a mismatched one is one Collection's metadata served
    as another's.
-5. A missing or non-string `was.epoch` is refused like a missing `was`.
+6. A missing or non-string `was.epoch` is refused like a missing `was`.
    Present, it MUST equal the epoch of the key that actually decrypted
    the envelope (the `did:key` before the `#` of that key's id); a
    mismatch is a replay of the envelope under a different epoch's key.
    The check has no epoch-less carve-out: there is no epoch-less envelope
    to admit.
 
-The first two failures are scheme refusals (the envelope is outside the
-profile); the rest are integrity failures (the server misrepresented
-what it stored). A reader SHOULD keep the two classes distinct in its
-error taxonomy and MUST NOT mask either as a routine decryption miss.
+The first three failures, and the absence of `was.epoch` in the last,
+are scheme refusals (the envelope is outside the profile); the rest are
+integrity failures (the server misrepresented what it stored). A reader
+SHOULD keep the two classes distinct in its error taxonomy and MUST NOT
+mask either as a routine decryption miss. The four scheme-refusal cases
+are thus: no `was`; no usable `was.v`; a future `was.v`; no usable
+`was.epoch`.
 
 ## Writes and reads {#writes-reads}
 
