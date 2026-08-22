@@ -103,7 +103,8 @@ construction is named as such in each implementing package's CHANGELOG.
 | Repo | Modules speaking the contract |
 | --- | --- |
 | storage-core | The wire types (`CollectionEncryption` and friends; the resource log entry types and `RESOURCE_LOG_METHOD` in `resourceLog.ts`). |
-| was-client | `src/edv/` is the reference implementation: the EDV envelope codec, epoch construction (`epochCrypto`, `epochKeys`), recipient operations, `x25519RecipientFromDidKey`, and the descriptor-store seam. `src/log/` is the resource log transport: JSON Lines codec and the CAS append / read-back store seam. |
+| vh-resource-log | The Resource Log Profile's generic client side: the JSON Lines codec, the `ResourceLogStore` port and read-back `confirmAppend`, entry building, chain verification against a caller-supplied controller view (with the `admitAppend` admission hook), the chain-head pin, the append/create path, and the sealing sweep. |
+| was-client | `src/edv/` is the reference implementation: the EDV envelope codec, epoch construction (`epochCrypto`, `epochKeys`), recipient operations, `x25519RecipientFromDidKey`, and the descriptor-store seam. `src/log/` is the WAS binding of vh-resource-log's store port (the `resourceLogStore` adapter over one Resource's conditional writes). |
 | wallet-core | `/keys` (the user-key wrap-set roster stores a `CollectionEncryption` descriptor verbatim), the ceremonies that rotate epochs (`/clients`, `/recovery`), and `src/resourceLog/` (entry building, hashing, and chain verification against the controller document). |
 | freewallet | Per-collection document ciphers over the local replica and remote-direct backends, app-provisioned collection encryption, share grants (`StorageManager.shareCollection`). |
 | dcw (private) | The mobile wallet's document cipher and sync-side epoch handling, over the same was-client/wallet-core modules. |
