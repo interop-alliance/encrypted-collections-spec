@@ -1333,9 +1333,12 @@ versionId</dfn>.** Where the controller's DID method provides versioned
 document resolution (as `did:webvh` does), the proof's `verificationMethod`
 MUST carry a `versionId` DID parameter [[DID-CORE]] naming the
 controller-document version the entry was authorized under, e.g.
-`did:webvh:...:id?versionId=6-Qm...#z6Mk...`. The controller versionId is
-inside the signed proof options, so it cannot be altered without breaking
-the proof. Where the controller's document is unversioned (a static DID
+`did:webvh:...:id?versionId=6-Qm...#z6Mk...`. The `versionId` parameter
+MUST be the only DID parameter on the `verificationMethod`, and its value
+MUST be the versionId verbatim (no percent-encoding). A verifier MUST
+reject a `verificationMethod` whose query carries any other parameter or
+an empty `versionId`. The controller versionId is inside the signed proof
+options, so it cannot be altered without breaking the proof. Where the controller's document is unversioned (a static DID
 such as `did:key`), the controller versionId is omitted and every
 controller-versionId rule below reads "the controller document".
 
