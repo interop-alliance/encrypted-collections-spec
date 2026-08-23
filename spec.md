@@ -1339,6 +1339,25 @@ the proof. Where the controller's document is unversioned (a static DID
 such as `did:key`), the controller versionId is omitted and every
 controller-versionId rule below reads "the controller document".
 
+**Multiple proofs carry one controller version.** All proofs of an entry
+MUST carry the same controller version and MUST be by distinct signing
+keys. A verifier MUST reject an entry whose proofs disagree on the
+controller version or whose proofs share a signing key.
+
+<div class="note">
+The `proof` array sits outside both the entry hash and every proof's own
+signature: the entry hash input omits `proof` ([[[#log-hashing]]]), and each
+proof signs the entry minus the `proof` array plus its own proof options.
+A host serving the log can therefore reorder, duplicate, or drop proofs
+without breaking the hash chain or any individual signature. Requiring
+distinct signing keys turns a duplicated proof into a rejection rather than
+a policy question for whatever consumes the entry. It also means a
+verifier's count of proofs, or of distinct keys among them, is only ever a
+lower bound on what a legitimate signer produced: the host can remove
+proofs undetected, but cannot add or repeat one without a distinct valid
+signature from a distinct key.
+</div>
+
 ### Authorization {#log-authorization}
 
 An entry is authorized by exactly one rule:
@@ -1347,6 +1366,11 @@ An entry is authorized by exactly one rule:
 > `assertionMethod` relation of the [=controller document=] **at the
 > entry's controller version**, where the controller document is resolved
 > and verified by the reader independently of the host serving the log.
+
+**The entry's controller version** is the common controller version its
+proofs carry ([[[#log-proof]]]): every proof of an entry carries the same
+value, so the entry has exactly one. Every signing key is checked for
+`assertionMethod` membership at that one value, not at any per-proof value.
 
 The rule's parts, unpacked, each normative:
 
@@ -1435,9 +1459,14 @@ place of recomputing from the entries themselves.
    predecessor-substituted input and check it against the `versionId`.
 4. **Proofs.** For each entry, verify every proof per [[[#log-proof]]].
 5. **Authorization.** For each entry, apply [[[#log-authorization]]]:
-   resolve the controller versionId against the independently verified
-   controller document, check `assertionMethod` membership of every signing
-   key, and check controller-version monotonicity.
+   first reduce the entry's proofs to its one controller version -- check
+   that every proof carries a controller version (or, under an unversioned
+   controller, that none does), that the proofs agree, and that no signing
+   key repeats across them, rejecting the entry otherwise
+   ([[[#log-proof]]]). Then, once for the entry, check that the controller
+   version is known and check controller-version monotonicity. Then check
+   `assertionMethod` membership of every signing key at that one controller
+   version.
 6. **Termination.** If any entry is a [=terminal entry=], check that it is
    the last entry; reject a log with entries after a terminal entry, and
    refuse to append past one ([[[#log-handover]]]).
@@ -1495,6 +1524,13 @@ A writer MUST:
    fact: the writer MUST read the log back and verify that the extended,
    verified log contains its entry before treating the append -- or any
    ceremony step gated on it -- as durable.
+
+This procedure is single-writer: one party builds the entry, its controller
+versionId, and its proof against one verified head. Where an entry carries
+more than one proof, that same writer assembles all of them in step 2, and
+all of them carry that writer's verified head's controller version. The
+procedure defines no step in which separate parties sign one entry against
+different verified heads.
 
 ### Head pinning {#log-pin}
 
