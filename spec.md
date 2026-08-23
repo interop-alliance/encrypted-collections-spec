@@ -1160,9 +1160,9 @@ extraction is almost entirely subtractive:
 * **Replaced:** the one verification step that consulted `updateKeys` -- the
   authorization predicate -- is replaced by the external rule of
   [[[#log-authorization]]].
-* **Added:** the [=entry anchor=] ([[[#log-proof]]]), the [=terminal entry=]
-  ([[[#log-handover]]]), and the [=chain-head pin=] semantics
-  ([[[#log-pin]]]).
+* **Added:** the [=controller versionId=] ([[[#log-proof]]]), the
+  [=terminal entry=] ([[[#log-handover]]]), and the [=chain-head pin=]
+  semantics ([[[#log-pin]]]).
 
 A did:webvh log answers to nobody -- it is a root of trust, so it must carry
 its own key state. A resource log answers to the account that owns it, so
@@ -1306,7 +1306,7 @@ system is transitively bound to that identifier. Together with the fixed
 five-member input shape, this is this profile's domain separation: no entry hash
 can collide with a hash minted over any other structure.
 
-### The entry proof and its anchor {#log-proof}
+### The entry proof and its controller versionId {#log-proof}
 
 Each element of an entry's `proof` array MUST be a Data Integrity proof
 [[VC-DATA-INTEGRITY]] with:
@@ -1316,7 +1316,8 @@ Each element of an entry's `proof` array MUST be a Data Integrity proof
   permitted
 * `proofPurpose`: `assertionMethod`
 * `verificationMethod`: a DID URL identifying the signing key in the
-  [=controller document=], carrying the [=entry anchor=] described below
+  [=controller document=], carrying the [=controller versionId=] described
+  below
 * `proofValue`: the proof value per [[VC-DI-EDDSA]]
 
 The proof input is the complete entry, including its final `versionId`,
@@ -1327,16 +1328,16 @@ an entry cannot be re-parented without breaking its proof.
 A verifier MUST verify every proof in the array. One failing proof rejects
 the entry.
 
-**The <dfn data-lt="entry anchors|anchored version">entry anchor</dfn>.**
-Where the controller's DID method provides versioned document resolution (as
-`did:webvh` does), the proof's `verificationMethod` MUST carry a `versionId`
-DID parameter [[DID-CORE]] naming the controller-document version the entry
-was authorized under, e.g.
-`did:webvh:...:id?versionId=6-Qm...#z6Mk...`. The anchor is inside the
-signed proof options, so it cannot be altered without breaking the proof.
-Where the controller's document is unversioned (a static DID such as
-`did:key`), the anchor is omitted and every anchor rule below reads "the
-controller document".
+**The <dfn data-lt="controller versionIds|controller version">controller
+versionId</dfn>.** Where the controller's DID method provides versioned
+document resolution (as `did:webvh` does), the proof's `verificationMethod`
+MUST carry a `versionId` DID parameter [[DID-CORE]] naming the
+controller-document version the entry was authorized under, e.g.
+`did:webvh:...:id?versionId=6-Qm...#z6Mk...`. The controller versionId is
+inside the signed proof options, so it cannot be altered without breaking
+the proof. Where the controller's document is unversioned (a static DID
+such as `did:key`), the controller versionId is omitted and every
+controller-versionId rule below reads "the controller document".
 
 ### Authorization {#log-authorization}
 
@@ -1344,8 +1345,8 @@ An entry is authorized by exactly one rule:
 
 > Every proof's signing key MUST be listed as a verification method under the
 > `assertionMethod` relation of the [=controller document=] **at the
-> entry's anchored version**, where the controller document is resolved and
-> verified by the reader independently of the host serving the log.
+> entry's controller version**, where the controller document is resolved
+> and verified by the reader independently of the host serving the log.
 
 The rule's parts, unpacked, each normative:
 
@@ -1354,7 +1355,7 @@ The rule's parts, unpacked, each normative:
    own verified resolution pipeline, cryptographically verifying every step:
    for a `did:webvh` controller, it fetches the controller log itself,
    verifies it end-to-end (SCID, entry hash chain, proofs, and its own head
-   pin, where it keeps one), and answers the anchored-version lookup from
+   pin, where it keeps one), and answers the controller-version lookup from
    that verified history. A verifier MUST NOT obtain the signing key by
    dereferencing the proof's `verificationMethod` URL as an ordinary
    resource fetch, and MUST NOT accept controller-document material supplied
@@ -1363,13 +1364,14 @@ The rule's parts, unpacked, each normative:
    would come from. (In implementation terms: the document loader handed to
    the proof-verification library answers DID URL lookups from the verified
    controller log, not from the wire.)
-2. **The anchored version must be present.** The anchor MUST identify a version
-   present in the reader's verified controller log, at or before its head. An
-   anchor naming an unknown version rejects the entry.
-3. **Anchors are monotone along the log.** Each entry's anchored version MUST
-   be the same as, or a descendant of (for a linear controller log: at or
-   after), the previous entry's anchored version. An entry anchored behind
-   its predecessor rejects the log.
+2. **The controller version must be present.** The controller versionId MUST
+   identify a version present in the reader's verified controller log, at or
+   before its head. A controller versionId naming an unknown version rejects
+   the entry.
+3. **Controller versions are monotone along the log.** Each entry's
+   controller version MUST be the same as, or a descendant of (for a linear
+   controller log: at or after), the previous entry's controller version. An
+   entry whose controller version is behind its predecessor rejects the log.
 4. **The relation is `assertionMethod`.** The log format's fixed proof shape
    ([[DID-WEBVH]]) sets `proofPurpose: assertionMethod`, and Data Integrity
    verification [[VC-DATA-INTEGRITY]] already requires a proof's verification
@@ -1386,31 +1388,32 @@ The rule's parts, unpacked, each normative:
    `keyAgreement`-only recovery key, an `authentication`-only login key)
    remain structurally excluded.
 
-**Writers anchor at their verified head.** A writer appending an entry MUST
-anchor it at the head of the controller document as the writer last verified
-it. Together with anchor monotonicity this yields the profile's historical
+**Writers name their verified head.** A writer appending an entry MUST carry
+the head of the controller document as the writer last verified it. Together
+with controller-version monotonicity this yields the profile's historical
 verification: entries verify **as-of-append**. A client revoked from the
-controller document keeps its past entries verifiable (they anchor at
-versions where its key was present) while losing the ability to have new
-entries accepted under post-revocation anchors.
+controller document keeps its past entries verifiable (they carry versions
+where its key was present) while losing the ability to have new entries
+accepted under post-revocation controller versions.
 
 **The sealing append.** After a controller-document change that removes a
 verification method, the controller's clients MUST ensure that each governed
-resource log receives at least one subsequent entry anchored at or after the
-new document version. Anchor monotonicity then makes the removal effective
-for that log: no later entry can anchor behind the seal, so the removed key
-can never validly append again. Until a log's sealing append operation lands,
-the removed key can still extend that log under a pre-removal anchor -- a
-residual window with the same shape, detection, and repair story as any other
-torn multi-resource ceremony. The staleness is visible in durable state (a
-log whose head anchor predates the membership change), and re-running the
-sealing pass will converge on the same state.
+resource log receives at least one subsequent entry carrying a controller
+version at or after the new document version. Controller-version
+monotonicity then makes the removal effective for that log: no later entry
+can carry a controller version behind the seal, so the removed key can never
+validly append again. Until a log's sealing append operation lands, the
+removed key can still extend that log under a pre-removal controller
+version -- a residual window with the same shape, detection, and repair
+story as any other torn multi-resource ceremony. The staleness is visible in
+durable state (a log whose head controller version predates the membership
+change), and re-running the sealing pass will converge on the same state.
 
 <div class="note">
 In the wallet ceremonies this profile serves, the sealing append is not an
 extra write: revoking a client already rotates every encrypted collection to
 a new key epoch, and each rotation is itself a state change appended to the
-governed log, anchored at the post-revocation document version.
+governed log, carrying the post-revocation document version.
 </div>
 
 ### Chain verification {#log-verification}
@@ -1432,9 +1435,9 @@ place of recomputing from the entries themselves.
    predecessor-substituted input and check it against the `versionId`.
 4. **Proofs.** For each entry, verify every proof per [[[#log-proof]]].
 5. **Authorization.** For each entry, apply [[[#log-authorization]]]:
-   resolve the anchor against the independently verified controller
-   document, check `assertionMethod` membership of every signing key,
-   and check anchor monotonicity.
+   resolve the controller versionId against the independently verified
+   controller document, check `assertionMethod` membership of every signing
+   key, and check controller-version monotonicity.
 6. **Termination.** If any entry is a [=terminal entry=], check that it is
    the last entry; reject a log with entries after a terminal entry, and
    refuse to append past one ([[[#log-handover]]]).
@@ -1483,9 +1486,9 @@ A writer MUST:
 
 1. Read the full log and verify it per [[[#log-verification]]] -- an entry
    is never built on an unverified head.
-2. Build the new entry against the verified head (full state, hash, anchor,
-   proof) and write the extended log conditionally on the entity tag of the
-   read from step 1.
+2. Build the new entry against the verified head (full state, hash,
+   controller versionId, proof) and write the extended log conditionally on
+   the entity tag of the read from step 1.
 3. On a conditional-write conflict: re-read, re-verify, rebase the change on
    the new head, and retry.
 4. **Confirm by reading back.** A write acknowledgement is a promise, not a
@@ -1762,7 +1765,7 @@ Possession of the roster resource confers nothing: its entries hold
 public key ids and wrapped-key ciphertext only ([[[#recipient-entry]]]),
 its recipients are resolved from the [=account controller document=]
 ([[[#roster-recipients]]]), and under the log form authorship of every
-configuration anchors in that document's keys. An implementation that
+configuration is grounded in that document's keys. An implementation that
 keeps an epoch pin ([[[#epoch-integrity]]]) SHOULD retain it even when
 it also pins the log head: the epoch pin still guards a client whose
 chain-head state was lost.
@@ -1782,9 +1785,9 @@ their [=key-agreement keys=] resolve from the verified
   every current-epoch recipient the post-edit document no longer backs
   -- a converging operation a re-run completes, with no per-client
   pairing state required beyond the document itself.
-* Where the roster is log-governed, that post-edit rotation is anchored
-  at or past the edit, satisfying the sealing rule imposed after an
-  authorized-writer removal ([[[#log-authorization]]]).
+* Where the roster is log-governed, that post-edit rotation carries a
+  controller version at or past the edit, satisfying the sealing rule
+  imposed after an authorized-writer removal ([[[#log-authorization]]]).
 
 ### The keyAgreement controller marker {#keyagreement-controller-marker}
 
@@ -1948,10 +1951,11 @@ silent split.
 
 **The revocation window.** Between a membership-removing controller-document
 edit and a given log's sealing append ([[[#log-authorization]]]), the removed
-key can still extend that log under a pre-removal anchor. The window is the
-same one any multi-resource revocation cascade has; what the profile adds is
-that the window's state is durably visible (a head anchor predating the
-membership change) and closes idempotently by re-running the seal.
+key can still extend that log under a pre-removal controller version. The
+window is the same one any multi-resource revocation cascade has; what the
+profile adds is that the window's state is durably visible (a head
+controller version predating the membership change) and closes idempotently
+by re-running the seal.
 
 ### The blinding key survives removal {#blinding-key-removal}
 
