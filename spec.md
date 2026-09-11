@@ -83,16 +83,17 @@ acceptance branch for either anywhere in the profile:
   collection</dfn></dt>
   <dd>A WAS
   [collection](https://w3c-ccg.github.io/wallet-attached-storage-spec/#dfn-collections)
-  whose Collection Description declares the `edv`
-  encryption scheme and whose resources are stored as [=envelopes=]. Its
-  descriptor carries an epoch roster from creation
+  whose Collection Metadata object declares the `edv` encryption scheme
+  in its `encryption` member, and whose resources are stored as
+  [=envelopes=]. Its descriptor carries an epoch roster from creation
   ([[[#single-epoch-era]]]).</dd>
 
   <dt><dfn data-lt="descriptor|encryption descriptors">encryption
   descriptor</dfn></dt>
   <dd>The non-secret `encryption` member of a collection's Collection
-  Description: the scheme, the scheme version, and the epoch roster
-  ([[[#descriptor]]]).</dd>
+  Metadata object -- a plaintext member, beside the encrypted `custom`
+  envelope. It carries the scheme, the scheme version, and the epoch
+  roster ([[[#descriptor]]]).</dd>
 
   <dt><dfn data-lt="epoch|epochs|key epochs">key epoch</dfn></dt>
   <dd>One generation of a collection's encryption key. Each epoch wraps its
@@ -389,9 +390,9 @@ that is unverifiable without the keys, by construction.
 
 ### Roster operations {#roster-operations}
 
-All descriptor mutation goes through conditional writes on the Collection
-Description (`If-Match` compare-and-swap; guarded create), per [[WAS]]. The
-operations:
+All descriptor mutation goes through conditional writes of the Collection
+Metadata object: `If-Match` against its `metaVersion` validator, and guarded
+create with `If-None-Match: *`, per [[WAS]]. The operations:
 
 * The first-epoch install, defined in [[[#first-epoch]]].
 * Adding a recipient MUST wrap every epoch's secret to it (adding a reader
@@ -727,9 +728,9 @@ the resolved epoch keys, and only those:
   unroutable, whatever key it names ([[[#single-epoch-era]]]).
 * An envelope naming an epoch the reader's cached descriptor does not
   carry is the unknown-epoch signal. Because an epoch rotation is a
-  Collection Description change and emits no `changes`-feed entry, a
-  reader holding a stale cached descriptor can meet envelopes stamped
-  with an unseen epoch; the remedy is exactly one descriptor re-read,
+  write of the Collection Metadata object and emits no `changes`-feed
+  entry, a reader holding a stale cached descriptor can meet envelopes
+  stamped with an unseen epoch; the remedy is exactly one descriptor re-read,
   key-resolution rebuild, and retry -- guarded to once per collection per
   session, so a genuinely foreign envelope cannot drive a refetch loop.
   Still unknown after the refresh, the envelope is refused as unroutable.
@@ -959,7 +960,8 @@ later-added reader must agree on: a writer blinds exactly the
 declared attributes at write time, and a reader can only query what
 it knows is declared. This profile persists that schema encrypted,
 inside the Collection Metadata envelope ([[[#was-binding]]]), as the
-`indexSchema` member of the collection metadata's `custom` object:
+`indexSchema` member of the Collection Metadata object's `custom`
+member:
 
 * `revision` (REQUIRED) - A non-negative integer, incremented by each
   declaration write; the empty schema is revision `0`.
@@ -976,9 +978,17 @@ inside the Collection Metadata envelope ([[[#was-binding]]]), as the
     was added.
 
 Declaring an index appends an entry and increments `revision`,
-through the conditional-write mechanics of the Collection Metadata
-surface (its validator and `If-Match`, per [[WAS]]), so concurrent
-declarations serialize. Declarations are add-only in this profile.
+through a conditional write of the Collection Metadata object
+(`If-Match` against `metaVersion`, per [[WAS]]), so concurrent
+declarations serialize. The object has a single validator, covering
+its plaintext members and its `custom` envelope alike, so a
+declaration contends with every plaintext configuration write of the
+same Collection. A concurrent rename or `backend` change makes the
+declaration's compare-and-swap fail with a precondition failure. The
+client MUST then re-read the object and retry the declaration against
+the fresh validator, resending the plaintext members it just read,
+because the write is a full replacement. Declarations are add-only in
+this profile.
 Re-declaring an existing index on identical terms is a no-op;
 changing a declaration's `unique` in place MUST be refused -- the
 server has been enforcing, or not enforcing, the claim for every
@@ -1004,9 +1014,10 @@ a refusal: the schema is discovery metadata riding a shared `custom`
 object, and the fail-closed guard is the undeclared-attribute
 refusal above.
 
-The schema rides the encrypted metadata envelope rather than the
-plaintext Collection Description, because attribute names and index structure
-reveal the collection's data model ([[[#index-schema-sensitivity]]]).
+The schema rides the encrypted `custom` envelope rather than a
+plaintext member of the Collection Metadata object. Attribute names
+and index structure reveal the collection's data model, and the server
+cannot read inside `custom` ([[[#index-schema-sensitivity]]]).
 
 ## Deferred minting {#deferred-minting}
 
@@ -1940,8 +1951,8 @@ descriptor-authenticity territory (the epoch pin and log form,
 
 ### Rotation is feed-invisible {#rotation-feed}
 
-An epoch rotation is a Collection Description change and emits no
-`changes`-feed entry. The unknown-epoch refresh of [[[#reads]]] is the
+An epoch rotation is a write of the Collection Metadata object and emits
+no `changes`-feed entry. The unknown-epoch refresh of [[[#reads]]] is the
 required remedy, and its once-per-collection-per-session guard is what
 keeps a foreign envelope from becoming a descriptor-refetch denial of
 service.
@@ -2027,6 +2038,7 @@ attributes they query, not everything they store.
 The schema itself is sensitive for the same reason: attribute names
 and compound structure describe the collection's data model. That is
 why `indexSchema` lives inside the encrypted Collection Metadata
-envelope ([[[#index-schema]]]) rather than in the plaintext
-Collection Description, and why the descriptor's `hmac` member
-carries a key id and wrapped bytes only, with no attribute names.
+envelope ([[[#index-schema]]]) rather than among the Collection
+Metadata object's plaintext, server-visible members, and why the
+descriptor's `hmac` member carries a key id and wrapped bytes only,
+with no attribute names.
