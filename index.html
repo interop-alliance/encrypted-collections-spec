@@ -23,6 +23,12 @@
           authors: ["Dmitri Zagidulin"],
           publisher: "W3C Credentials Community Group"
         },
+        "PWS-AUTHZ": {
+          title: "Portable Web Spaces Authorization Profile",
+          href: "https://w3id.org/pws/authz-profile",
+          authors: ["Dmitri Zagidulin"],
+          publisher: "W3C Credentials Community Group"
+        },
         "APP-CONNECT": {
           title: "App Connect for Portable Web Spaces",
           href: "https://interop-alliance.github.io/app-connect-spec/",
@@ -89,7 +95,15 @@
 </section>
 
 <section id="conformance">
-  <!-- This section is filled automatically by ReSpec. -->
+  <!-- The normative-language boilerplate is filled automatically by ReSpec. -->
+  <p>
+    Most of this profile binds clients: writers and readers of encrypted
+    collections. The exception is
+    <a href="#chunked-resources">Chunked resources</a>, which defines an HTTP
+    surface. A server that implements this profile serves the chunk
+    endpoints. They are not advertised by a feature token, and a server that
+    does not implement this profile MAY omit them.
+  </p>
 </section>
 
 <div data-include="spec.md" data-include-format="markdown" data-include-replace="true"></div>

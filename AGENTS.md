@@ -9,11 +9,16 @@ the AEAD-bound `pws` binding, epoch-configuration integrity (the epoch
 pin and the log form), the resource log profile (the hash-linked,
 externally authorized log form under which descriptors and key rosters
 are co-managed, extracted from did:webvh),
-recipient management, and deferred minting for local-first writers.
+recipient management, deferred minting for local-first writers, and the
+chunked-resource HTTP surface a large or streamed document is stored on.
 
 This is a **companion spec layered on top of [PWS]** (which owns the storage
-model, HTTP API, and the server-visible halves: descriptor shape rails and
-epoch stamp surfaces) and a sibling of **[APP-CONNECT]** (which defers to
+model, most of the HTTP API, and the server-visible halves: descriptor shape
+validation and epoch stamp surfaces). It is not purely client-side: the chunk
+endpoints under a Resource's `chunks` sub-path are defined here, and a server
+implementing this profile serves them (see
+[decisions/0002](decisions/0002-chunks-live-in-the-profile.md)). It is a
+sibling of **[APP-CONNECT]** (which defers to
 this profile for the encrypted-collection construction and for the
 resource log profile, citing only its external-authorization rule for
 enrolled clients).
@@ -31,8 +36,8 @@ prose is accurate, internally consistent, and renders cleanly in ReSpec.
 - `spec.md` -- the entire normative specification (single file). This is what
   you edit 99% of the time.
 - `index.html` -- ReSpec shell: config (`specStatus: "unofficial"`, GitHub
-  repo, xref to `did-core`, `localBiblio` for `PWS`, `APP-CONNECT`,
-  `DID-KEY`, `EDV`, `DID-WEBVH`, `JSON-LINES`) and the
+  repo, xref to `did-core`, `localBiblio` for `PWS`, `PWS-AUTHZ`,
+  `APP-CONNECT`, `DID-KEY`, `EDV`, `DID-WEBVH`, `JSON-LINES`) and the
   `<div data-include="spec.md">` include. The
   `<h1>`, abstract, SotD, and conformance sections live here, not in
   `spec.md`.
@@ -106,13 +111,13 @@ construction is named as such in each implementing package's CHANGELOG.
 | --- | --- |
 | storage-core | The wire types (`CollectionEncryption` and friends; the resource log entry types and `RESOURCE_LOG_METHOD` in `resourceLog.ts`). |
 | vh-resource-log | The Resource Log Profile's generic client side: the JSON Lines codec, the `ResourceLogStore` port and read-back `confirmAppend`, entry building, chain verification against a caller-supplied controller view (with the `admitAppend` admission hook), the chain-head pin, the append/create path, and the sealing sweep. |
-| was-client | `src/edv/` is the reference implementation: the EDV envelope codec, epoch construction (`epochCrypto`, `epochKeys`), recipient operations, `x25519RecipientFromDidKey`, and the descriptor-store seam. `src/log/` is the PWS binding of vh-resource-log's store port (the `resourceLogStore` adapter over one Resource's conditional writes). |
+| was-client | `src/edv/` is the reference implementation: the EDV envelope codec, the chunked-stream write and read paths (`WasTransport`, `EdvCodec#chunkedWrite`), epoch construction (`epochCrypto`, `epochKeys`), recipient operations, `x25519RecipientFromDidKey`, and the descriptor-store seam. `src/log/` is the PWS binding of vh-resource-log's store port (the `resourceLogStore` adapter over one Resource's conditional writes). |
 | wallet-core | `/keys` (the user-key wrap-set roster stores a `CollectionEncryption` descriptor verbatim), the ceremonies that rotate epochs (`/clients`, `/recovery`), `/clientAnnex` (`ensureRosterDeliveredEpochs`, the shared roster-genesis-and-epoch installer the credential-anchored establishment and its mend arms run), and `src/resourceLog/` (the did:webvh controller adapter over vh-resource-log's controller port, and the ceremony-tail license supplied through its `admitAppend` hook). |
 | freewallet | Per-collection document ciphers over the local replica and remote-direct backends, app-provisioned collection encryption, share grants (`StorageManager.shareCollection`). |
 | dcw (private) | The mobile wallet's document cipher and sync-side epoch handling, over the same was-client/wallet-core modules. |
 | was-react | `SharedCollectionReader` and `createDocCipher` (epoch-aware reads as a grantee); its `test/node/sharedCollection.test.ts` exercises the real was-client `/edv` roster operations and recipient derivation. |
-| was-teaching-server | The server-visible halves: descriptor shape rails and the `Key-Epoch` stamp surfaces. |
-| was-conformance-suite | `encryption-descriptor-api` and the key-epoch checks in `client-spaces` validate the server-visible halves. |
+| was-teaching-server | The server-visible halves: descriptor shape validation, the `Key-Epoch` stamp surfaces, and the chunk endpoints (`#chunked-resources`). |
+| was-conformance-suite | `encryption-descriptor-api` and the key-epoch checks in `client-spaces` validate the server-visible halves; `chunks-api` is this profile's server-side chunk suite. |
 
 ## Ecosystem conventions
 
