@@ -1,17 +1,17 @@
-# Encrypted Collections for Wallet Attached Storage
+# Encrypted Collections for Portable Web Spaces
 
-The WAS Encrypted Collections profile (WAS-EC): a client-side companion
-profile to the [Wallet Attached Storage
+The PWS Encrypted Collections profile (PWS-EC): a client-side companion
+profile to the [Portable Web Spaces
 spec](https://w3c-ccg.github.io/wallet-attached-storage-spec/) defining
 end-to-end encrypted Collections -- the encryption descriptor with its
 key-epoch roster, the Encrypted Data Vault envelope format with its
-AEAD-bound `was` integrity binding, epoch-configuration authentication,
+AEAD-bound `pws` integrity binding, epoch-configuration authentication,
 the resource log profile (the hash-linked log form under which descriptors
 and key rosters are co-managed), recipient management, and the
 deferred-minting rules for local-first writers.
 
 Referenced by the [App Connect
-spec](https://interop-alliance.github.io/app-connect-spec/) as `[[WAS-EC]]`.
+spec](https://interop-alliance.github.io/app-connect-spec/) as `[[PWS-EC]]`.
 
 ## Preview locally
 

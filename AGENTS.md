@@ -1,17 +1,17 @@
-# Encrypted Collections for Wallet Attached Storage -- Specification
+# Encrypted Collections for Portable Web Spaces -- Specification
 
-This repo is the **WAS Encrypted Collections (WAS-EC)** specification, a W3C
+This repo is the **PWS Encrypted Collections (PWS-EC)** specification, a W3C
 CCG-style document authored in **ReSpec + Markdown**. It defines the
-client-side encrypted-collection construction over Wallet Attached Storage:
+client-side encrypted-collection construction over Portable Web Spaces:
 the encryption descriptor with its key-epoch roster (carried from the
 collection's creation -- the single epoch era), the EDV envelope format with
-the AEAD-bound `was` binding, epoch-configuration integrity (the epoch
+the AEAD-bound `pws` binding, epoch-configuration integrity (the epoch
 pin and the log form), the resource log profile (the hash-linked,
 externally authorized log form under which descriptors and key rosters
 are co-managed, extracted from did:webvh),
 recipient management, and deferred minting for local-first writers.
 
-This is a **companion spec layered on top of [WAS]** (which owns the storage
+This is a **companion spec layered on top of [PWS]** (which owns the storage
 model, HTTP API, and the server-visible halves: descriptor shape rails and
 epoch stamp surfaces) and a sibling of **[APP-CONNECT]** (which defers to
 this profile for the encrypted-collection construction and for the
@@ -31,7 +31,7 @@ prose is accurate, internally consistent, and renders cleanly in ReSpec.
 - `spec.md` -- the entire normative specification (single file). This is what
   you edit 99% of the time.
 - `index.html` -- ReSpec shell: config (`specStatus: "unofficial"`, GitHub
-  repo, xref to `did-core`, `localBiblio` for `WAS`, `APP-CONNECT`,
+  repo, xref to `did-core`, `localBiblio` for `PWS`, `APP-CONNECT`,
   `DID-KEY`, `EDV`, `DID-WEBVH`, `JSON-LINES`) and the
   `<div data-include="spec.md">` include. The
   `<h1>`, abstract, SotD, and conformance sections live here, not in
@@ -57,7 +57,7 @@ Match the existing style (same conventions as the app-connect-spec repo):
 - **Term references:** `[=term=]` links to a `<dfn>` in the Terminology list
   (e.g. `[=epoch=]`, `[=recipient=]`, `[=envelope=]`, `[=owner=]`). Define
   new terms in the `## Terminology` `<dl>` with `<dfn data-lt="aliases">`.
-- **Bibliography refs:** `[[WAS]]`, `[[APP-CONNECT]]`, `[[DID-KEY]]`,
+- **Bibliography refs:** `[[PWS]]`, `[[APP-CONNECT]]`, `[[DID-KEY]]`,
   `[[EDV]]`, `[[RFC...]]` -- ReSpec auto-resolves (custom keys via
   `localBiblio` in `index.html`).
 - **Headings map to numbered sections.** `##` = top-level, `###`/`####` nest.
@@ -66,22 +66,24 @@ Match the existing style (same conventions as the app-connect-spec repo):
 ## Design invariants (so edits stay consistent)
 
 - **The single epoch era.** One era only: descriptors carry epochs from
-  creation and every envelope binds `was.epoch`. Never introduce a
+  creation and every envelope binds `pws.epoch`. Never introduce a
   legacy/fallback branch anywhere (no descriptor-less reader tolerance, no
-  "missing `was` means accept it"). The spec deliberately contains no
+  "missing `pws` means accept it"). The spec deliberately contains no
   historical asides; do not add any.
-- **Byte-level values are permanent.** The epoch-MAC HKDF info
-  (`was-epoch-config-mac/v1`), the MAC payload prefix
-  (`was-epoch-config/v1.`), the fixed member order of the config JSON,
-  every value in the (reserved) pinned-inputs registry, and the resource
-  log constants (the `resource-log:0.1` format identifier, the `{SCID}`
-  placeholder, the bare-base58btc SHA-256 multihash entry hash, the
-  `eddsa-jcs-2022` / `assertionMethod` proof shape) are baked into stored
-  artifacts. Verify against code before changing a single character.
+- **Byte-level values are permanent.** The JWE protected-header parameter
+  `pws` and its members (`v`, `epoch`, `resource`, `collection`) -- bound
+  into the AEAD, so a rename invalidates every stored envelope -- the
+  descriptor's `epochs` array order (it decides a reader's write epoch
+  deterministically), every value in the (reserved) pinned-inputs
+  registry, and the resource log constants (the `resource-log:0.1`
+  format identifier, the `{SCID}` placeholder, the bare-base58btc
+  SHA-256 multihash entry hash, the `eddsa-jcs-2022` / `assertionMethod`
+  proof shape) are baked into stored artifacts. Verify against code
+  before changing a single character.
 - **The resource log profile lives here, not in App Connect.** Its only
   normative dependency is the controller document; the mention of enrolled
   clients is an informative back-reference to [APP-CONNECT]. A normative
-  WAS-EC-to-App-Connect reference in the log profile would re-create the
+  PWS-EC-to-App-Connect reference in the log profile would re-create the
   dependency cycle the re-homing removed (see
   [decisions/0001](decisions/0001-resource-log-profile-home.md)).
 - **Altitude rule:** state invariants, not current implementations ("the
@@ -104,7 +106,7 @@ construction is named as such in each implementing package's CHANGELOG.
 | --- | --- |
 | storage-core | The wire types (`CollectionEncryption` and friends; the resource log entry types and `RESOURCE_LOG_METHOD` in `resourceLog.ts`). |
 | vh-resource-log | The Resource Log Profile's generic client side: the JSON Lines codec, the `ResourceLogStore` port and read-back `confirmAppend`, entry building, chain verification against a caller-supplied controller view (with the `admitAppend` admission hook), the chain-head pin, the append/create path, and the sealing sweep. |
-| was-client | `src/edv/` is the reference implementation: the EDV envelope codec, epoch construction (`epochCrypto`, `epochKeys`), recipient operations, `x25519RecipientFromDidKey`, and the descriptor-store seam. `src/log/` is the WAS binding of vh-resource-log's store port (the `resourceLogStore` adapter over one Resource's conditional writes). |
+| was-client | `src/edv/` is the reference implementation: the EDV envelope codec, epoch construction (`epochCrypto`, `epochKeys`), recipient operations, `x25519RecipientFromDidKey`, and the descriptor-store seam. `src/log/` is the PWS binding of vh-resource-log's store port (the `resourceLogStore` adapter over one Resource's conditional writes). |
 | wallet-core | `/keys` (the user-key wrap-set roster stores a `CollectionEncryption` descriptor verbatim), the ceremonies that rotate epochs (`/clients`, `/recovery`), `/clientAnnex` (`ensureRosterDeliveredEpochs`, the shared roster-genesis-and-epoch installer the credential-anchored establishment and its mend arms run), and `src/resourceLog/` (the did:webvh controller adapter over vh-resource-log's controller port, and the ceremony-tail license supplied through its `admitAppend` hook). |
 | freewallet | Per-collection document ciphers over the local replica and remote-direct backends, app-provisioned collection encryption, share grants (`StorageManager.shareCollection`). |
 | dcw (private) | The mobile wallet's document cipher and sync-side epoch handling, over the same was-client/wallet-core modules. |
@@ -131,7 +133,7 @@ These are separate repositories. Ground spec prose against real behavior --
 check with the user before editing anything in them.
 
 - [wallet-attached-storage-spec](https://github.com/w3c-ccg/wallet-attached-storage-spec)
-  -- the WAS spec this profile layers on; its `spec.md` is the source of
+  -- the PWS spec this profile layers on; its `spec.md` is the source of
   truth.
 - [app-connect-spec](https://github.com/interop-alliance/app-connect-spec) --
   the sibling companion spec (recipient-derivation invariant, epoch-roster

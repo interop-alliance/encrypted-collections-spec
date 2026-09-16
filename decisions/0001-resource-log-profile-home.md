@@ -1,4 +1,4 @@
-# 0001: The resource log profile is normatively homed in WAS-EC
+# 0001: The resource log profile is normatively homed in PWS-EC
 
 - Status: accepted
 - Date: 2026-08-13
@@ -26,10 +26,10 @@ Connect spec, a consent-ceremony profile, only because that is where it
 was first drafted.
 
 That placement created a circular normative dependency: App Connect
-defers to WAS-EC for every other construction (roster, envelope,
-recipient derivation), while WAS-EC deferred back to App Connect for the
+defers to PWS-EC for every other construction (roster, envelope,
+recipient derivation), while PWS-EC deferred back to App Connect for the
 log form alone. App Connect's own design goals flag the profile as the
-one exception to its no-server-side-support rule (it needs WAS
+one exception to its no-server-side-support rule (it needs PWS
 conditional writes), which marks it as storage-layer material.
 
 ## Decision
@@ -43,7 +43,7 @@ The profile's only normative root of authority is the account controller
 document. Its mention of enrolled clients (the writers of the log model)
 is an informative back-reference to App Connect. App Connect keeps a
 short hand-off section and cites the external-authorization rule from
-WAS-EC for its enrolled clients.
+PWS-EC for its enrolled clients.
 
 ## Rejected Alternatives
 
@@ -57,12 +57,12 @@ WAS-EC for its enrolled clients.
 
 ## Consequences
 
-- WAS-EC gains DID-WEBVH and JSON-LINES bibliography entries, and the
+- PWS-EC gains DID-WEBVH and JSON-LINES bibliography entries, and the
   resource log constants join the list of permanent byte-level values
   this spec guards.
 - App Connect no longer depends on DID-WEBVH except as a controller
-  document method; its enrolled-client term cites WAS-EC.
-- A normative WAS-EC-to-App-Connect reference inside the log profile
+  document method; its enrolled-client term cites PWS-EC.
+- A normative PWS-EC-to-App-Connect reference inside the log profile
   must not be reintroduced; it would recreate the cycle.
 
 ## Revisit Criteria

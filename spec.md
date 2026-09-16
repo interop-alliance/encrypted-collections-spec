@@ -1,26 +1,26 @@
 ## Introduction {#introduction}
 
-This document defines the Encrypted Collections profile for Wallet Attached
-Storage ([[WAS]]): the client-side construction by which a WAS
+This document defines the Encrypted Collections profile for Portable Web
+Spaces ([[PWS]]): the client-side construction by which a PWS
 [collection](https://w3c-ccg.github.io/wallet-attached-storage-spec/#dfn-collections)'s
 contents are end-to-end encrypted under rotatable key epochs,
 so that several readers can hold per-reader keys, reader removal has a
 cryptographic meaning, and a storage server never holds key material.
 
-The profile is a client-side convention layered on the WAS storage substrate.
-A conforming WAS server needs nothing beyond the features it already
+The profile is a client-side convention layered on the PWS storage substrate.
+A conforming PWS server needs nothing beyond the features it already
 advertises: it stores opaque envelopes, validates their non-secret shape
-(the `edv` scheme of the WAS [Encryption Scheme
+(the `edv` scheme of the PWS [Encryption Scheme
 Registry](https://w3c-ccg.github.io/wallet-attached-storage-spec/#encryption-scheme-registry)),
 and serves the
 non-secret descriptor and epoch stamps. Every normative requirement in this
 profile therefore binds clients -- writers and readers of encrypted
 collections -- except where a requirement is explicitly identified as the
-server-visible half defined by [[WAS]].
+server-visible half defined by [[PWS]].
 
 | Specification                                                  | Relationship                                                                                                                                                                                                                                                                                                                                                                           |
 |----------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| [[WAS]]                                                        | The storage substrate: Spaces, Collections, Resources, the `encryption` descriptor slot, the Encryption Scheme Registry's `edv` envelope validation, conditional writes, the `changes` feed. This profile's server-visible halves ([descriptor shape validation](https://w3c-ccg.github.io/wallet-attached-storage-spec/#epoch-data-model), the epoch stamp surfaces, the [`blinded-index` query profile](https://w3c-ccg.github.io/wallet-attached-storage-spec/#query-profile-blinded-index) with its unique-attribute enforcement) are defined there.                                                                                |
+| [[PWS]]                                                        | The storage substrate: Spaces, Collections, Resources, the `encryption` descriptor slot, the Encryption Scheme Registry's `edv` envelope validation, conditional writes, the `changes` feed. This profile's server-visible halves ([descriptor shape validation](https://w3c-ccg.github.io/wallet-attached-storage-spec/#epoch-data-model), the epoch stamp surfaces, the [`blinded-index` query profile](https://w3c-ccg.github.io/wallet-attached-storage-spec/#query-profile-blinded-index) with its unique-attribute enforcement) are defined there.                                                                                |
 | [[APP-CONNECT]]                                                | The companion profile by which an application obtains capabilities into a wallet's Space. It defers to this profile for the encrypted-collection construction: the epoch roster, the envelope format, recipient-key derivation, the definition of an epoch-roster recipient, and the [=resource log=] profile under which its enrolled clients co-manage key resources ([[[#resource-log-profile]]]). |
 | [[DID-WEBVH]]                                                  | The log format the [=resource log=] profile is extracted from ([[[#log-webvh]]]), and one method a Space controller's [=controller document=] may be verified under. Nothing outside that profile depends on it. |
 | [Encrypted Data Vaults](https://identity.foundation/edv-spec/) | The envelope vocabulary: the Encrypted Document shape, the JWE recipients structure, and the blinded-index model this profile's envelopes reuse verbatim.                                                                                                                                                                                                                              |
@@ -71,8 +71,8 @@ acceptance branch for either anywhere in the profile:
 
 * A descriptor declaring the `edv` scheme without an epoch roster is
   non-conforming ([[[#epoch-less-descriptor]]]).
-* An envelope without the `was` binding, or without `was.epoch`, is refused
-  ([[[#was-binding]]]).
+* An envelope without the `pws` binding, or without `pws.epoch`, is refused
+  ([[[#pws-binding]]]).
 * A reader's own key-agreement key is never a decryption candidate; reads
   route through resolved epoch keys only ([[[#reads]]]).
 
@@ -81,7 +81,7 @@ acceptance branch for either anywhere in the profile:
 <dl class="termlist definitions" data-sort="ascending">
   <dt><dfn data-lt="encrypted collections|encrypted">encrypted
   collection</dfn></dt>
-  <dd>A WAS
+  <dd>A PWS
   [collection](https://w3c-ccg.github.io/wallet-attached-storage-spec/#dfn-collections)
   whose Collection Metadata object declares the `edv` encryption scheme
   in its `encryption` member, and whose resources are stored as
@@ -128,14 +128,14 @@ acceptance branch for either anywhere in the profile:
   holding a wrap of an epoch's secret to that key: an entry in that epoch's
   `recipients` array. Recipiency is the read
   (decrypt) axis of an encrypted collection, distinct from the fetch axis a
-  WAS capability governs.</dd>
+  PWS capability governs.</dd>
 
   <dt><dfn data-lt="envelopes">envelope</dfn></dt>
   <dd>The stored form of a resource in an encrypted collection: an Encrypted
   Data Vault [Encrypted
   Document](https://identity.foundation/edv-spec/#dfn-encrypteddocument)
   [[EDV]] whose `jwe` seals the plaintext to an
-  [=epoch key=] and binds the `was` protected-header parameter
+  [=epoch key=] and binds the `pws` protected-header parameter
   ([[[#envelope]]]).</dd>
 
   <dt><dfn data-lt="blinding keys">blinding key</dfn></dt>
@@ -197,19 +197,19 @@ acceptance branch for either anywhere in the profile:
   default.</dd>
 
   <dt><dfn data-lt="collections">collection</dfn></dt>
-  <dd>A WAS
+  <dd>A PWS
   [Collection](https://w3c-ccg.github.io/wallet-attached-storage-spec/#dfn-collections)
-  [[WAS]].</dd>
+  [[PWS]].</dd>
 
   <dt><dfn data-lt="resources">resource</dfn></dt>
-  <dd>A WAS
+  <dd>A PWS
   [Resource](https://w3c-ccg.github.io/wallet-attached-storage-spec/#resources-and-blobs)
-  [[WAS]].</dd>
+  [[PWS]].</dd>
 
   <dt><dfn data-lt="Spaces">Space</dfn></dt>
-  <dd>A WAS
+  <dd>A PWS
   [Space](https://w3c-ccg.github.io/wallet-attached-storage-spec/#spaces)
-  [[WAS]].</dd>
+  [[PWS]].</dd>
 </dl>
 
 ## The encryption descriptor {#descriptor}
@@ -223,7 +223,7 @@ conforming descriptor in which any of them is absent.
 
 * `scheme` (REQUIRED) - The string `edv`.
 * `version` (OPTIONAL) - The positive-integer version of the `edv` envelope
-  wire format, per the WAS [Encryption Scheme
+  wire format, per the PWS [Encryption Scheme
   Registry](https://w3c-ccg.github.io/wallet-attached-storage-spec/#encryption-scheme-registry).
   An absent `version` means `1`. This document describes version `1`.
 * `type` (OPTIONAL) - The string `WasEpochConfiguration`, the descriptor's
@@ -252,7 +252,7 @@ conforming descriptor in which any of them is absent.
   never, and never rotated ([[[#blinding-key-lifecycle]]]).
 
 The descriptor's `scheme` and `version` are set-once for the life of the
-collection, per [[WAS]], whose [Epoch data
+collection, per [[PWS]], whose [Epoch data
 model](https://w3c-ccg.github.io/wallet-attached-storage-spec/#epoch-data-model)
 and
 [Encryption Scheme Registry](https://w3c-ccg.github.io/wallet-attached-storage-spec/#encryption-scheme-registry)
@@ -392,7 +392,7 @@ that is unverifiable without the keys, by construction.
 
 All descriptor mutation goes through conditional writes of the Collection
 Metadata object: `If-Match` against its `metaVersion` validator, and guarded
-create with `If-None-Match: *`, per [[WAS]]. The operations:
+create with `If-None-Match: *`, per [[PWS]]. The operations:
 
 * The first-epoch install, defined in [[[#first-epoch]]].
 * Adding a recipient MUST wrap every epoch's secret to it (adding a reader
@@ -462,9 +462,9 @@ Encrypted Document: the JSON object `{ "id": ..., "sequence": ...,
 [[[#indexed-entries]]]), whose `jwe` is a
 JWE in JSON Serialization carrying the sealed plaintext. The stored
 content type is `application/jose+json` where the server parses it, with
-`application/json` as the portable default an unmodified WAS server
+`application/json` as the portable default an unmodified PWS server
 accepts. The envelope shape and the server's structural fail-closed
-validation of it are the `edv` scheme registration of [[WAS]]'s Encryption
+validation of it are the `edv` scheme registration of [[PWS]]'s Encryption
 Scheme Registry.
 
 The plaintext document carried inside the JWE declares its own inner
@@ -506,7 +506,7 @@ additionally seals its `stream` state; see the `"chunked"` row below):
 | absent | The JSON value itself, verbatim: the caller's JSON object or array. |
 | `"utf-8"` | `{ "text": ... }`: the plaintext as one JSON string. Used for text-family media types whose bytes are valid UTF-8. |
 | `"base64"` | `{ "bytes": ... }`: the plaintext bytes in standard base64 ([[RFC4648]] section 4, the `+` and `/` alphabet, padded). This is distinct from the unpadded base64url of the JWE members (`jwe.ciphertext`, `epk.x`, `apu`, `apv`, `encrypted_key`); a reader MUST NOT decode the two with one alphabet. Used for binary content, and for text-family content whose bytes are not valid UTF-8. |
-| `"chunked"` | `{}`: the document's bytes are not inline; they live in the resource's chunk resources ([[WAS]]'s chunked streams). The chunked document form is not otherwise specified by this document. |
+| `"chunked"` | `{}`: the document's bytes are not inline; they live in the resource's chunk resources ([[PWS]]'s chunked streams). The chunked document form is not otherwise specified by this document. |
 
 An absent `meta.encoding` means JSON. A reader MUST select the `content`
 shape from `meta.encoding` alone and MUST NOT infer an encoding from the
@@ -516,7 +516,7 @@ The writer's `meta.encoding` is the only in-band discriminator, and it is
 inside the AEAD.
 
 A metadata envelope -- the encrypted `custom` object of a resource's or
-the Collection's metadata ([[[#was-binding]]]) -- seals the `custom`
+the Collection's metadata ([[[#pws-binding]]]) -- seals the `custom`
 object itself as `content`, verbatim, and carries no `meta`: the
 `custom` object is always JSON, and the absent-`encoding` rule above
 applies. A reader of a metadata envelope MUST treat its `content` as the
@@ -602,9 +602,9 @@ not the plaintext; two replicas independently encrypting identical
 plaintext produce distinct resource ids, and convergence is defined on
 decrypted content, not on envelope bytes.
 
-### The `was` binding {#was-binding}
+### The `pws` binding {#pws-binding}
 
-Every envelope MUST carry a `was` parameter in its JWE protected header,
+Every envelope MUST carry a `pws` parameter in its JWE protected header,
 bound into the AEAD (so a successful decrypt proves it authentic):
 
 * `v` (REQUIRED) - The `edv` scheme version the envelope was written
@@ -617,19 +617,19 @@ bound into the AEAD (so a successful decrypt proves it authentic):
   until after encryption ([[[#content-ids]]]), or a Collection Metadata
   envelope, which belongs to no resource.
 * `collection` (OPTIONAL) - The Collection id the envelope is bound to:
-  the Collection's `id`, the `{collection_id}` path segment of [[WAS]]'s
+  the Collection's `id`, the `{collection_id}` path segment of [[PWS]]'s
   URL templates. Present on exactly one envelope kind, the Collection
   Metadata envelope; an envelope in any resource slot -- content or
   resource metadata -- MUST NOT bind it.
 
 A resource metadata envelope (the encrypted `custom` object of a
-resource's metadata, per [[WAS]]) binds `was` exactly like a content
+resource's metadata, per [[PWS]]) binds `pws` exactly like a content
 envelope, with `resource` always present -- bound to the resource's id,
 not to the metadata envelope's own internal document id -- and `epoch`
 the write epoch like every write.
 
 A Collection Metadata envelope (the encrypted `custom` object of the
-Collection's own metadata, per [[WAS]]) belongs to no resource. It MUST
+Collection's own metadata, per [[PWS]]) belongs to no resource. It MUST
 bind `collection` -- the id of the Collection it was written for -- and
 MUST NOT bind `resource`; `epoch` is the write epoch like every write.
 Each of the profile's slots is thereby declared positively, by the
@@ -642,67 +642,67 @@ merely a missing `resource` ([[[#binding-verification]]]).
 ### Binding verification {#binding-verification}
 
 After every successful decrypt, and before the plaintext is used, a reader
-MUST verify the `was` binding. The checks, in order, all unconditional:
+MUST verify the `pws` binding. The checks, in order, all unconditional:
 
-1. A missing `was` parameter is refused: every envelope of this profile
-   binds `was` at encrypt time, so its absence means a writer this scheme
+1. A missing `pws` parameter is refused: every envelope of this profile
+   binds `pws` at encrypt time, so its absence means a writer this scheme
    does not admit. There is no unbound-envelope acceptance
    ([[[#single-epoch-era]]]).
-2. A `was.v` that is absent, or present but not a JSON number, is
-   refused like a missing `was`: an envelope that does not declare its
+2. A `pws.v` that is absent, or present but not a JSON number, is
+   refused like a missing `pws`: an envelope that does not declare its
    scheme version is outside the profile. There is no default version to
    assume.
-3. A `was.v` greater than the scheme version the reader implements is
+3. A `pws.v` greater than the scheme version the reader implements is
    refused: a future-scheme envelope this reader does not understand. The
    version the reader implements is the one the collection's descriptor
    declares (its `version`, [[[#descriptor-members]]]), which the reader
    has already confirmed it supports before building any cipher.
 4. When the read targeted a known resource id (a content or resource
-   metadata read): a present `was.collection` is refused before any id
+   metadata read): a present `pws.collection` is refused before any id
    comparison (the Collection's metadata envelope was served in a
-   resource slot). A string `was.resource` MUST equal the targeted id (a
+   resource slot). A string `pws.resource` MUST equal the targeted id (a
    mismatch is a server-side swap of two resources' envelopes); without
-   a string `was.resource` the envelope is treated as a content-derived
+   a string `pws.resource` the envelope is treated as a content-derived
    write, and the id re-derived from its ciphertext ([[[#content-ids]]])
    MUST equal the targeted id (a mismatch means the envelope was served
    under an id it was not written for).
 5. When the read targeted the Collection Metadata slot: a present
-   `was.resource` is refused (a resource's envelope was served in the
-   Collection's slot), and a string `was.collection` MUST be present and
+   `pws.resource` is refused (a resource's envelope was served in the
+   Collection's slot), and a string `pws.collection` MUST be present and
    equal the id of the Collection the read addressed. A missing
-   `was.collection` means an envelope of some other slot -- notably a
+   `pws.collection` means an envelope of some other slot -- notably a
    content-derived content envelope, whose member set is otherwise
    identical -- and a mismatched one is one Collection's metadata served
    as another's.
-6. A missing or non-string `was.epoch` is refused like a missing `was`.
+6. A missing or non-string `pws.epoch` is refused like a missing `pws`.
    Present, it MUST equal the epoch of the key that actually decrypted
    the envelope (the `did:key` before the `#` of that key's id); a
    mismatch is a replay of the envelope under a different epoch's key.
    The check has no epoch-less carve-out: there is no epoch-less envelope
    to admit.
 
-The first three failures, and the absence of `was.epoch` in the last,
+The first three failures, and the absence of `pws.epoch` in the last,
 are scheme refusals (the envelope is outside the profile); the rest are
 integrity failures (the server misrepresented what it stored). A reader
 SHOULD keep the two classes distinct in its error taxonomy and MUST NOT
 mask either as a routine decryption miss. The four scheme-refusal cases
-are thus: no `was`; no usable `was.v`; a future `was.v`; no usable
-`was.epoch`.
+are thus: no `pws`; no usable `pws.v`; a future `pws.v`; no usable
+`pws.epoch`.
 
 ## Writes and reads {#writes-reads}
 
 ### Writes {#writes}
 
 * A write MUST encrypt under the descriptor's `currentEpoch` and bind it
-  as `was.epoch`.
+  as `pws.epoch`.
 * A content write SHOULD declare its epoch to the server (the
-  `Key-Epoch` request header, per [[WAS]]), so listings and the `changes` feed can
+  `Key-Epoch` request header, per [[PWS]]), so listings and the `changes` feed can
   serve the epoch stamp and a replicating reader can select its key
   before fetching the envelope. The server-served stamp is advisory
   routing metadata; the authoritative binding is the envelope's own
-  AEAD-bound `was.epoch`.
+  AEAD-bound `pws.epoch`.
 * Inserts use guarded creates (`If-None-Match: *`) and updates use
-  `If-Match`, per the collection's mutability class and [[WAS]]'s
+  `If-Match`, per the collection's mutability class and [[PWS]]'s
   conditional requests.
 
 ### Reads {#reads}
@@ -758,11 +758,11 @@ descriptor distributes ([[[#blinding-key]]]), the `indexed` token
 entries envelopes carry ([[[#indexed-entries]]],
 [[[#blinded-tokens]]]), and the encrypted index schema
 ([[[#index-schema]]]). The query wire shape and the server's matching
-are the server-visible half, defined by [[WAS]]'s [`blinded-index`
+are the server-visible half, defined by [[PWS]]'s [`blinded-index`
 query
 profile](https://w3c-ccg.github.io/wallet-attached-storage-spec/#query-profile-blinded-index).
 Serving queries is a server feature (the `blinded-index-query`
-backend feature of [[WAS]]); an indexable collection stored on a
+backend feature of [[PWS]]); an indexable collection stored on a
 server without it is fully functional, merely unqueryable remotely.
 
 ### The blinding key {#blinding-key}
@@ -880,7 +880,7 @@ profile's cardinalities:
   token pair, computed as [[[#blinded-tokens]]] defines. An attribute
   with `"unique": true` claims per-collection uniqueness of its token
   pair; enforcing the claim is the server-visible half, the
-  unique-blinded-attributes rule of [[WAS]]'s `blinded-index`
+  unique-blinded-attributes rule of [[PWS]]'s `blinded-index`
   profile.
 
 An envelope of a collection with no blinding key MUST NOT carry
@@ -892,7 +892,7 @@ envelope ([[[#index-schema]]]).
 
 `indexed` lives outside the JWE, in the clear, and that is its
 function: the server stores and matches it without being able to
-invert a token. It is consequently outside the AEAD and the `was`
+invert a token. It is consequently outside the AEAD and the `pws`
 binding. A reader MUST NOT treat `indexed` as authenticated: query
 results are candidate envelopes, and integrity rests where it always
 does, on each envelope's decrypt and binding verification
@@ -913,8 +913,8 @@ secret, `||` is byte concatenation, and `base64url` is unpadded
 An indexed attribute is named by a dotted path into the sealed
 plaintext document, rooted at `content` (the document's content) or
 `meta` (the document's own inner type descriptor: `contentType` and
-`encoding`). The path never addresses the WAS resource metadata
-slot, which is a separate envelope ([[[#was-binding]]]). A literal
+`encoding`). The path never addresses the PWS resource metadata
+slot, which is a separate envelope ([[[#pws-binding]]]). A literal
 `.` inside a path segment is escaped as `\.`, and the name digest
 below is taken over the full path string as written, escapes
 included. For a simple attribute with path `name` holding plaintext
@@ -959,7 +959,7 @@ compound declarations -- is configuration every writer and every
 later-added reader must agree on: a writer blinds exactly the
 declared attributes at write time, and a reader can only query what
 it knows is declared. This profile persists that schema encrypted,
-inside the Collection Metadata envelope ([[[#was-binding]]]), as the
+inside the Collection Metadata envelope ([[[#pws-binding]]]), as the
 `indexSchema` member of the Collection Metadata object's `custom`
 member:
 
@@ -979,7 +979,7 @@ member:
 
 Declaring an index appends an entry and increments `revision`,
 through a conditional write of the Collection Metadata object
-(`If-Match` against `metaVersion`, per [[WAS]]), so concurrent
+(`If-Match` against `metaVersion`, per [[PWS]]), so concurrent
 declarations serialize. The object has a single validator, covering
 its plaintext members and its `custom` envelope alike, so a
 declaration contends with every plaintext configuration write of the
@@ -1138,7 +1138,7 @@ Three parties appear in this profile:
   append; the profile assumes no coordination between them beyond the storage
   server's [Conditional Request](https://w3c-ccg.github.io/wallet-attached-storage-spec/#conditional-requests)
   compare-and-swap primitive (see [[[#log-append]]]).
-* The **host** -- the storage server holding the log resource. Under [[WAS]]
+* The **host** -- the storage server holding the log resource. Under [[PWS]]
   the host is trusted to enforce authorization on writes; this profile
   deliberately does not lean on that trust. For log verification the host is
   treated as a minimal store that linearizes concurrent appends and nothing
@@ -1284,7 +1284,7 @@ canonicalized input, wrapped as a multihash (the bytes `0x12`, `0x20`, then the
 32 digest bytes), encoded with the `base58btc` alphabet, with **no** multibase
 prefix. This is byte-for-byte the `did:webvh` entry-hash format. It is
 deliberately NOT the `z`-prefixed multibase serialization, and NOT the
-`base64url`serialization used for content addressing elsewhere in [[WAS]];
+`base64url`serialization used for content addressing elsewhere in [[PWS]];
 one format, chosen once, so a verifier never has to guess.
 
 **The entry hash.** The `entryHash` of entry `n` is the hash, as above, of the
@@ -1514,11 +1514,11 @@ workflows, verification runs:
 ### Appending {#log-append}
 
 Appending is linearized by the host's compare-and-swap (CAS) primitive
-(conditional writes on the log resource's entity tag, per [[WAS]]); the chain
+(conditional writes on the log resource's entity tag, per [[PWS]]); the chain
 itself carries no consensus mechanism, and none is needed: concurrent writers
 produce a CAS conflict as opposed to a fork.
 
-Conditional writes are an optional feature in [[WAS]]. A host serving
+Conditional writes are an optional feature in [[PWS]]. A host serving
 resource logs MUST support them: the backend holding the log MUST advertise
 the `conditional-writes` feature, and a writer MUST NOT fall back to an
 unconditional write against a backend that does not. Without the
@@ -1918,7 +1918,7 @@ imply stronger guarantees.
 
 ### Fetch and decrypt are separate axes {#two-axes}
 
-The WAS capability governs fetch (server-enforced, immediate on
+The PWS capability governs fetch (server-enforced, immediate on
 revocation); epoch recipiency governs decrypt (mathematics, prospective
 only). Removing a reader means acting on both, rotate first
 ([[[#roster-operations]]]); neither alone suffices, and documentation and
@@ -1935,7 +1935,7 @@ and have it accepted.
 
 ### The scope of the collection binding {#collection-binding-scope}
 
-`was.collection` binds the Collection's id, which [[WAS]] scopes to the
+`pws.collection` binds the Collection's id, which [[PWS]] scopes to the
 Space. Two collections carrying the same id in different Spaces are
 therefore not distinguished by the binding; they are distinguished by
 their keys alone (every epoch secret is fresh and per-collection,

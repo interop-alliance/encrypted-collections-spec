@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset='utf-8'>
-  <title>Encrypted Collections for Wallet Attached Storage</title>
+  <title>Encrypted Collections for Portable Web Spaces</title>
   <script src='https://www.w3.org/Tools/respec/respec-w3c' async class='remove'></script>
   <script class='remove'>
     // All config options at https://respec.org/docs/
@@ -17,14 +17,14 @@
       includePermalinks: false,
       xref: ["did-core"],
       localBiblio: {
-        "WAS": {
-          title: "Wallet Attached Storage",
+        "PWS": {
+          title: "Portable Web Spaces",
           href: "https://w3c-ccg.github.io/wallet-attached-storage-spec/",
           authors: ["Dmitri Zagidulin"],
           publisher: "W3C Credentials Community Group"
         },
         "APP-CONNECT": {
-          title: "App Connect for Wallet Attached Storage",
+          title: "App Connect for Portable Web Spaces",
           href: "https://interop-alliance.github.io/app-connect-spec/",
           authors: ["Dmitri Zagidulin"],
           publisher: "W3C Credentials Community Group (proposed work item)"
@@ -66,19 +66,19 @@
     </script>
 </head>
 <body>
-<h1 id="title">Encrypted Collections for Wallet Attached Storage v0.1</h1>
+<h1 id="title">Encrypted Collections for Portable Web Spaces v0.1</h1>
 <section id='abstract'>
   <p>
     A client-side profile defining end-to-end encrypted Collections over
-    Wallet Attached Storage (WAS): the encryption descriptor with its
+    Portable Web Spaces (PWS): the encryption descriptor with its
     key-epoch roster, carried from the collection's creation; the Encrypted
-    Data Vault envelope format with its AEAD-bound <code>was</code> integrity
+    Data Vault envelope format with its AEAD-bound <code>pws</code> integrity
     binding; epoch-configuration authentication; recipient management by
     escrow and rotate-first removal; the blinded index for equality
     queries over encrypted content; the deferred-minting rules for
     local-first writers; and the resource log profile, the hash-linked,
     externally authorized log form under which descriptors and key
-    rosters are co-managed by a wallet's clients. The storage server needs nothing beyond WAS and
+    rosters are co-managed by a wallet's clients. The storage server needs nothing beyond PWS and
     never holds key material.
   </p>
 </section>
