@@ -7,20 +7,29 @@ contents are end-to-end encrypted under rotatable key epochs,
 so that several readers can hold per-reader keys, reader removal has a
 cryptographic meaning, and a storage server never holds key material.
 
-The profile is a client-side convention layered on the PWS storage substrate.
-A conforming PWS server needs nothing beyond the features it already
-advertises: it stores opaque envelopes, validates their non-secret shape
-(the `edv` scheme of the PWS [Encryption Scheme
+The profile is almost entirely a client-side convention layered on the PWS
+storage substrate. For everything but large documents, a conforming PWS
+server needs nothing beyond its baseline surface: it stores
+opaque envelopes, validates their non-secret shape (the `edv` scheme of the
+PWS [Encryption Scheme
 Registry](https://w3c-ccg.github.io/wallet-attached-storage-spec/#encryption-scheme-registry)),
-and serves the
-non-secret descriptor and epoch stamps. Every normative requirement in this
-profile therefore binds clients -- writers and readers of encrypted
-collections -- except where a requirement is explicitly identified as the
-server-visible half defined by [[PWS]].
+and serves the non-secret descriptor and epoch stamps. Those normative
+requirements bind clients -- writers and readers of encrypted collections --
+except where a requirement is explicitly identified as the server-visible
+half defined by [[PWS]].
+
+This profile also defines one HTTP surface of its own: the chunk endpoints of
+[[[#chunked-resources]]], the substrate a large or streamed document is
+stored on. A JWE is sealed as one unit in memory, so a large stream is cut
+into bounded envelopes; the chunk endpoints are where those envelopes live.
+Serving them is required of a server that implements this profile, so the
+server's [=version entry=] for this profile is itself their advertisement
+([[[#service-description]]]) and no feature token names them.
 
 | Specification                                                  | Relationship                                                                                                                                                                                                                                                                                                                                                                           |
 |----------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| [[PWS]]                                                        | The storage substrate: Spaces, Collections, Resources, the `encryption` descriptor slot, the Encryption Scheme Registry's `edv` envelope validation, conditional writes, the `changes` feed. This profile's server-visible halves ([descriptor shape validation](https://w3c-ccg.github.io/wallet-attached-storage-spec/#epoch-data-model), the epoch stamp surfaces, the [`blinded-index` query profile](https://w3c-ccg.github.io/wallet-attached-storage-spec/#query-profile-blinded-index) with its unique-attribute enforcement) are defined there.                                                                                |
+| [[PWS]]                                                        | The storage substrate: Spaces, Collections, Resources, the `encryption` descriptor slot, the Encryption Scheme Registry's `edv` envelope validation, conditional writes, the `changes` feed, and the service description this profile's [=version entry=] is listed in ([[[#service-description]]]). This profile's server-visible halves ([descriptor shape validation](https://w3c-ccg.github.io/wallet-attached-storage-spec/#epoch-data-model), the epoch stamp surfaces, the [`blinded-index` query profile](https://w3c-ccg.github.io/wallet-attached-storage-spec/#query-profile-blinded-index) with its unique-attribute enforcement) are defined there.                                                                                |
+| [[PWS-AUTHZ]]                                                  | The baseline PWS authorization profile: zCaps over HTTP Signatures, the exact-match `invocationTarget` rule, and the `Digest` request-body integrity header. Cited by [[[#chunk-authorization]]]. |
 | [[APP-CONNECT]]                                                | The companion profile by which an application obtains capabilities into a wallet's Space. It defers to this profile for the encrypted-collection construction: the epoch roster, the envelope format, recipient-key derivation, the definition of an epoch-roster recipient, and the [=resource log=] profile under which its enrolled clients co-manage key resources ([[[#resource-log-profile]]]). |
 | [[DID-WEBVH]]                                                  | The log format the [=resource log=] profile is extracted from ([[[#log-webvh]]]), and one method a Space controller's [=controller document=] may be verified under. Nothing outside that profile depends on it. |
 | [Encrypted Data Vaults](https://identity.foundation/edv-spec/) | The envelope vocabulary: the Encrypted Document shape, the JWE recipients structure, and the blinded-index model this profile's envelopes reuse verbatim.                                                                                                                                                                                                                              |
@@ -196,6 +205,13 @@ acceptance branch for either anywhere in the profile:
   departure is an explicit consent surface rather than a silent
   default.</dd>
 
+  <dt><dfn data-lt="chunks">chunk</dfn></dt>
+  <dd>One opaque byte sequence of a [=resource=]'s ordered chunk set,
+  addressed by a non-negative integer index under the resource's reserved
+  `chunks` sub-path ([[[#chunked-resources]]]). In an
+  [=encrypted collection=] a chunk holds one sealed fragment of a large or
+  streamed document ([[[#chunked-envelopes]]]).</dd>
+
   <dt><dfn data-lt="collections">collection</dfn></dt>
   <dd>A PWS
   [Collection](https://w3c-ccg.github.io/wallet-attached-storage-spec/#dfn-collections)
@@ -211,6 +227,92 @@ acceptance branch for either anywhere in the profile:
   [Space](https://w3c-ccg.github.io/wallet-attached-storage-spec/#spaces)
   [[PWS]].</dd>
 </dl>
+
+## Service description {#service-description}
+
+A server tells clients which specifications it speaks through the PWS
+[service description](https://w3c-ccg.github.io/wallet-attached-storage-spec/#service-description):
+a server-wide JSON document whose `specs` member maps each specification's
+persistent identifier to the versions of it the server implements. This
+section declares this profile's identifier and defines the [=version entry=]
+a server lists under it.
+
+### This profile's identifier {#spec-identifier}
+
+The persistent identifier of this specification is
+`https://w3id.org/pws/encrypted-collections`.
+
+That string is the `specs` key a server lists this profile under. It names
+the specification, not the document's current location, and it never carries
+a version -- the [=version entries=] under the key carry those. Clients
+compare the key as an opaque string, with no URL normalization.
+
+### The version entry {#version-entry}
+
+A <dfn data-lt="version entries">version entry</dfn> under this profile's
+identifier is a JSON object with the members [[PWS]] defines for every entry,
+plus this profile's `features` array:
+
+* `version` (REQUIRED) - The version of this profile the server implements,
+  a bare `major.minor` string. This document is version `0.1`.
+* `url` (OPTIONAL) - The URL of this document at exactly that version.
+* `features` (OPTIONAL) - An array of feature tokens from
+  [[[#feature-tokens]]], naming the optional affordances of this profile the
+  server serves. An absent array means the same as an empty one: the server
+  serves neither affordance.
+
+An entry means the server conforms to this profile's required server-visible
+surface at that version. That surface is the chunk endpoints of
+[[[#chunked-resources]]]: a server that lists this profile serves them, and
+no feature token advertises them separately ([[[#chunked-resources]]]). The
+rest of this profile binds clients, so there is nothing else for the entry to
+claim.
+
+A server that does not implement this profile lists no entry under the
+identifier. A client that finds none MUST NOT infer that encrypted
+collections are unavailable -- the construction is client-side, and a
+baseline PWS server stores its envelopes -- only that the chunk endpoints and
+both affordances below are absent.
+
+Example: the `specs` member of a service description, for a server serving
+both affordances (other keys elided):
+
+```json
+{
+  "specs": {
+    "https://w3id.org/pws/encrypted-collections": [
+      {
+        "version": "0.1",
+        "url": "https://interop-alliance.github.io/encrypted-collections-spec/",
+        "features": ["blinded-index-query", "governed-history-logs"]
+      }
+    ]
+  }
+}
+```
+
+### Feature tokens {#feature-tokens}
+
+Two affordances of this profile are optional, each because the profile
+defines a way to work without it. Each is advertised by one token:
+
+* <dfn data-lt="blinded-index-query">`blinded-index-query`</dfn> - The
+  server serves the `blinded-index` query profile of [[PWS]] over a
+  collection's blinded tokens, and enforces the `unique` attribute
+  constraint. Without it a client fetches and filters locally, and a
+  uniqueness constraint is at best a racy client-side read-then-write
+  ([[[#blinded-index]]], [[[#limitations]]]).
+* <dfn data-lt="governed-history-logs">`governed-history-logs`</dfn> - The
+  server serves a collection's `meta/log` sub-resource and derives the
+  governed `encryption` member of the collection's Metadata object from that
+  log's head entry. This is the server side of the log form of an
+  [=encryption descriptor=] ([[[#log-form]]]). Without it a deployment stays
+  on point state and gets its epoch-configuration integrity from the
+  client-held epoch pin ([[[#epoch-integrity]]]).
+
+The token vocabulary is open and additive. A client MUST ignore a token it
+does not recognize, and MUST treat an absent token as "not supported"; it
+MUST NOT infer support for one affordance from the presence of the other.
 
 ## The encryption descriptor {#descriptor}
 
@@ -467,6 +569,15 @@ accepts. The envelope shape and the server's structural fail-closed
 validation of it are the `edv` scheme registration of [[PWS]]'s Encryption
 Scheme Registry.
 
+The envelope's `sequence` member is carried, and no server enforces it. In a
+native Encrypted Data Vault it is a monotonic counter the server checks as
+`previous + 1`. Here concurrency control is [[PWS]]'s conditional writes
+instead: a guarded create (`If-None-Match: *`) for an insert, and `If-Match`
+pinned to the observed `ETag` for an update ([[[#writes]]]), with the
+Collection Metadata object's `metaVersion` precondition guarding descriptor
+writes ([[[#roster-operations]]]). A writer SHOULD advance `sequence` on each
+write and a reader MUST NOT rely on it for freshness or ordering.
+
 The plaintext document carried inside the JWE declares its own inner
 content type and encoding ([[[#plaintext-document]]]).
 Nothing user-visible -- content, plaintext type, user metadata -- appears
@@ -506,7 +617,7 @@ additionally seals its `stream` state; see the `"chunked"` row below):
 | absent | The JSON value itself, verbatim: the caller's JSON object or array. |
 | `"utf-8"` | `{ "text": ... }`: the plaintext as one JSON string. Used for text-family media types whose bytes are valid UTF-8. |
 | `"base64"` | `{ "bytes": ... }`: the plaintext bytes in standard base64 ([[RFC4648]] section 4, the `+` and `/` alphabet, padded). This is distinct from the unpadded base64url of the JWE members (`jwe.ciphertext`, `epk.x`, `apu`, `apv`, `encrypted_key`); a reader MUST NOT decode the two with one alphabet. Used for binary content, and for text-family content whose bytes are not valid UTF-8. |
-| `"chunked"` | `{}`: the document's bytes are not inline; they live in the resource's chunk resources ([[PWS]]'s chunked streams). The chunked document form is not otherwise specified by this document. |
+| `"chunked"` | `{}`: the document's bytes are not inline. They live in the resource's chunks, and the document seals a `stream` member carrying the chunk count ([[[#chunked-envelopes]]]). |
 
 An absent `meta.encoding` means JSON. A reader MUST select the `content`
 shape from `meta.encoding` alone and MUST NOT infer an encoding from the
@@ -747,6 +858,381 @@ A reader that is not a recipient of any epoch of a collection fails
 closed with a recipiency error -- the read axis is absent, whatever its
 capability (fetch axis) status.
 
+## Chunked resources {#chunked-resources}
+
+<div class="note">
+This section defines an HTTP surface, not a client-side convention. Serving
+the chunk endpoints is required of a server that implements this profile, so
+a [=version entry=] under this profile's identifier is what advertises them
+([[[#version-entry]]]) and no feature token names them: chunk support is blob
+CRUD under a sub-path, and an encrypted collection that never stores a large
+document simply never uses it.
+</div>
+
+A [=resource=] MAY carry an ordered set of [=chunks=]: opaque byte sequences,
+each addressed by a non-negative integer index under the resource's reserved
+`chunks` sub-path. Chunks let a client store a representation larger than a
+single request (or a single encryption [=envelope=]) can carry, without the
+server ever parsing or reassembling anything. The server treats each chunk
+exactly like a binary resource representation -- stored bytes plus a content
+type (see [[PWS]]'s [Content Types and
+Representations](https://w3c-ccg.github.io/wallet-attached-storage-spec/#content-types-and-representations))
+-- and framing and reassembly (including the client-side encryption of
+[[[#chunked-envelopes]]]) are entirely the client's concern. The server never
+concatenates a resource's chunks, and reading the parent resource's own
+content returns only that content, not its chunks; the chunk set is
+discovered and read through the endpoints below.
+
+The bytes of a chunk are opaque to the server: the server never parses them,
+whether they are the encrypted fragments of [[[#chunked-envelopes]]] or
+anything else a client chooses to store there.
+
+Error names in this section are [[PWS]] error types; their canonical
+`application/problem+json` examples are in [[PWS]]'s [Error Type
+Registry](https://w3c-ccg.github.io/wallet-attached-storage-spec/#error-type-registry).
+The maximum-privacy rule of [[PWS]]'s [Error
+Handling](https://w3c-ccg.github.io/wallet-attached-storage-spec/#error-handling)
+-- an under-authorized request is indistinguishable from a missing target --
+applies to a chunk exactly as it does to a resource.
+
+### The chunk address {#chunk-address}
+
+A single chunk is addressed in member form (no trailing slash), and a
+resource's chunk set is listed in container form (trailing slash), following
+[[PWS]]'s trailing-slash convention:
+
+* `PUT` / `GET` / `HEAD` / `DELETE`
+  `/space/{space_id}/{collection_id}/{resource_id}/chunks/{index}` -- store,
+  read, head, and delete a single chunk.
+* `GET` `/space/{space_id}/{collection_id}/{resource_id}/chunks/` -- list the
+  resource's chunks.
+
+As elsewhere in [[PWS]], a request to the non-canonical variant of either form
+is redirected to the canonical one with `308 Permanent Redirect` (which,
+unlike a `302`, requires the client to replay the same method and body): a
+`GET` of the member-form `chunks` container without its trailing slash
+redirects to the trailing-slash form, and a member `PUT` (or other member
+method) carrying a trailing slash redirects to the no-slash form.
+
+The `{index}` path segment MUST be a canonical non-negative decimal integer: a
+single `0`, or a digit run with no leading zero, no sign, and no non-digit
+characters (so `0`, `1`, `42` are valid; `01`, `+1`, `-1`, `1e3`, `1.0` are
+not). A server MUST reject a non-canonical index with an `invalid-id` (`400`)
+error. Requiring one canonical serialization keeps each chunk addressable at
+exactly one URL.
+
+### Store chunk operation {#store-chunk-operation}
+
+#### (HTTP API) PUT `/space/{space_id}/{collection_id}/{resource_id}/chunks/{index}`
+
+* Requires appropriate authorization
+  - For example, when using zCaps for authorization ([[PWS-AUTHZ]]), the
+    request must either: be signed by the Space's controller, or invoke a
+    delegated capability that allows the `PUT` action, whose
+    `invocationTarget` is the chunk's own full URL (see
+    [[[#chunk-authorization]]]).
+* Upserts the chunk at `{index}`: a write replaces any chunk already stored
+  there. Indexes need not be written contiguously or in order.
+* Returns a `204` success response carrying the chunk's `ETag`.
+
+The request body is raw bytes under any `Content-Type`. The server MUST NOT
+parse or validate a chunk body. This holds even for a [=collection=] that
+declares an `encryption` descriptor: the scheme's envelope validation applies
+to a resource's own content, and not to its chunks, because the chunks of an
+encrypted stream are ciphertext fragments rather than envelope documents. The
+parent resource MUST already exist; a `PUT` to a chunk of a resource that does
+not exist is rejected with `not-found` (`404`), so a chunk can never be
+orphaned. The authorization profile's request-body integrity requirement (for
+the baseline, the [`Digest`
+header](https://w3id.org/pws/authz-profile#request-body-integrity-digest-header)
+of [[PWS-AUTHZ]]) applies per request -- that is, per chunk. The backend's
+`maxUploadBytes` cap and quota accounting apply to a chunk write exactly as
+they do to a resource write (see [[PWS]]'s
+[Quotas](https://w3c-ccg.github.io/wallet-attached-storage-spec/#quotas)).
+
+Each chunk carries its own strong `ETag` validator, independent of the parent
+resource's and of the other chunks'. The `If-Match` / `If-None-Match` write
+preconditions of [[PWS]]'s [Conditional
+Requests](https://w3c-ccg.github.io/wallet-attached-storage-spec/#conditional-requests)
+apply per chunk, against that validator.
+
+Example request (storing chunk `0` as raw bytes):
+
+```http
+PUT /space/81246131-69a4-45ab-9bff-9c946b59cf2e/backups/bigfile/chunks/0 HTTP/1.1
+Host: example.com
+Content-Type: application/octet-stream
+Digest: mh=uEiCPO-qYr-z0GYV5F75-N1l8Rhjv4xIkKZsnbTZeZ7emSA
+Authorization: ...
+
+...raw chunk bytes...
+```
+
+Example success response:
+
+```http
+HTTP/1.1 204 No Content
+ETag: "1"
+```
+
+Errors:
+
+* `invalid-id` (400) -- the `{index}` segment is not a canonical non-negative
+  decimal integer (see [[[#chunk-address]]]).
+* `not-found` (404) -- the parent resource (or its enclosing Space or
+  collection) does not exist, or the caller has missing or insufficient
+  authorization; the two are indistinguishable.
+* `payload-too-large` (413) -- the chunk exceeds the backend's
+  `maxUploadBytes` constraint.
+* `quota-exceeded` (507) -- the collection's backend has no storage quota
+  remaining.
+* `precondition-failed` (412) -- a conditional write's `If-Match` /
+  `If-None-Match` precondition evaluated false against the chunk's own
+  `ETag`.
+
+### Read chunk operation {#read-chunk-operation}
+
+#### (HTTP API) GET `/space/{space_id}/{collection_id}/{resource_id}/chunks/{index}`
+
+A read returns the chunk's stored bytes, verbatim, with the content type they
+were stored under, and the chunk's `ETag`. A `HEAD` on the same address
+returns those same headers -- the response `Content-Type` and
+`Content-Length` are read from the chunk's stored metadata, so the byte stream
+is never opened -- with no body, mirroring [[PWS]]'s resource `HEAD` variant.
+Authorization for a chunk read (and `HEAD`) is capability-or-policy and
+resolves at the parent resource's access level (see
+[[[#chunk-authorization]]]).
+
+Example request:
+
+```http
+GET /space/81246131-69a4-45ab-9bff-9c946b59cf2e/backups/bigfile/chunks/0 HTTP/1.1
+Host: example.com
+Authorization: ...
+```
+
+Example success response:
+
+```http
+HTTP/1.1 200 OK
+Content-Type: application/octet-stream
+ETag: "1"
+
+...raw chunk bytes...
+```
+
+Errors:
+
+* `invalid-id` (400) -- the `{index}` segment is not canonical (see
+  [[[#chunk-address]]]).
+* `not-found` (404) -- no chunk is stored at `{index}` (the parent resource
+  may exist but have no chunk there), or the caller has missing or
+  insufficient authorization; the two are indistinguishable.
+
+### Delete chunk operation {#delete-chunk-operation}
+
+#### (HTTP API) DELETE `/space/{space_id}/{collection_id}/{resource_id}/chunks/{index}`
+
+* Requires appropriate authorization on the same terms as the store chunk
+  operation (capability-only against the chunk's own URL; see
+  [[[#chunk-authorization]]]).
+* Removes the chunk at `{index}` and returns a `204` success response.
+* Accepts the `If-Match` precondition of [[PWS]]'s conditional requests
+  against the chunk's own `ETag`.
+
+Unlike [[PWS]]'s [Delete Resource
+operation](https://w3c-ccg.github.io/wallet-attached-storage-spec/#delete-resource-operation),
+deleting a chunk is not idempotent: a `DELETE` of an absent chunk is rejected
+with `not-found` (`404`) rather than a `204`. This is deliberate -- a client
+reassembling a chunked representation must be able to distinguish a chunk that
+is *gone* from one that was *never written*, which an idempotent delete would
+erase.
+
+Example request:
+
+```http
+DELETE /space/81246131-69a4-45ab-9bff-9c946b59cf2e/backups/bigfile/chunks/0 HTTP/1.1
+Host: example.com
+Authorization: ...
+```
+
+Example success response:
+
+```http
+HTTP/1.1 204 No Content
+```
+
+Errors:
+
+* `invalid-id` (400) -- the `{index}` segment is not canonical.
+* `not-found` (404) -- no chunk is stored at `{index}` (see above), or the
+  caller has missing or insufficient authorization; the two are
+  indistinguishable.
+* `precondition-failed` (412) -- an `If-Match` precondition evaluated false
+  against the chunk's `ETag`.
+
+### List chunks operation {#list-chunks-operation}
+
+#### (HTTP API) GET `/space/{space_id}/{collection_id}/{resource_id}/chunks/`
+
+The container form lists a resource's stored chunks. Because the server never
+reassembles a chunked resource, this listing is the discovery mechanism: a
+reader learns the chunk set here -- how many chunks exist and each one's
+index, size, and content type -- and then reads indexes `0` through
+`count - 1` itself. Authorization is capability-or-policy against the
+`chunks/` container URL, resolving at the parent resource's access level (see
+[[[#chunk-authorization]]]).
+
+The response is an `application/json` object:
+
+* `resourceId` -- the parent resource's id.
+* `count` -- the number of stored chunks.
+* `chunks` -- an array, in ascending `index` order, of one entry per stored
+  chunk:
+  * `index` -- the chunk's non-negative integer index.
+  * `size` -- the length in bytes of the stored chunk.
+  * `contentType` -- the content type the chunk was stored under.
+  * `version` (optional) -- the chunk's monotonic version, the integer from
+    which its strong `ETag` is derived (the `ETag` is this integer, quoted).
+    Present when the server derives the chunk's `ETag` from an internal
+    version counter; absent when it derives the `ETag` some other way, such
+    as a content hash.
+
+The parent resource MUST exist for its chunk container to: a listing under an
+absent resource is a `not-found` (`404`). A resource that exists but has no
+chunks lists as `count` `0` with an empty `chunks` array.
+
+Example request:
+
+```http
+GET /space/81246131-69a4-45ab-9bff-9c946b59cf2e/backups/bigfile/chunks/ HTTP/1.1
+Host: example.com
+Accept: application/json
+Authorization: ...
+```
+
+Example success response:
+
+```http
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+  "resourceId": "bigfile",
+  "count": 3,
+  "chunks": [
+    { "index": 0, "size": 1048576, "contentType": "application/octet-stream", "version": 1 },
+    { "index": 1, "size": 1048576, "contentType": "application/octet-stream", "version": 1 },
+    { "index": 2, "size": 524288, "contentType": "application/octet-stream", "version": 1 }
+  ]
+}
+```
+
+Errors:
+
+* `not-found` (404) -- the parent resource does not exist, or the caller has
+  missing or insufficient authorization; the two are indistinguishable.
+
+### Chunk lifecycle {#chunk-lifecycle}
+
+A resource's chunks are bound to the resource. Deleting the parent resource
+(see [[PWS]]'s [Delete Resource
+operation](https://w3c-ccg.github.io/wallet-attached-storage-spec/#delete-resource-operation))
+MUST cascade-delete all of its chunks; there is no way to leave chunks behind
+a deleted resource. A resource's chunks are carried alongside its content by a
+Space export and restored by the matching import (the `export` reserved
+segment of [[PWS]]).
+
+Chunk writes and deletes are invisible to [[PWS]]'s [`changes` query
+profile](https://w3c-ccg.github.io/wallet-attached-storage-spec/#query-profile-changes):
+storing or deleting a chunk affects only the chunk's own `ETag` validator and
+MUST NOT advance the parent resource's position in the feed, and the feed
+enumerates resources only, not chunks. A client replicating a chunked
+resource MUST therefore finish the write by updating the parent resource's own
+content (its envelope; see [[[#chunked-envelopes]]]) after its chunks are
+stored: that final resource write is what surfaces the change to replicating
+readers. A client that mutates a resource purely through its chunks never
+appears on the feed.
+
+### Chunk authorization {#chunk-authorization}
+
+Chunk operations use the same authorization model as every other [[PWS]]
+operation (see [[PWS]]'s
+[Authorization](https://w3c-ccg.github.io/wallet-attached-storage-spec/#authorization)):
+writes (`PUT`, `DELETE`) are capability-only, while reads (`GET`, `HEAD`, and
+the container listing) are capability-or-policy. A chunk write's capability
+`invocationTarget` MUST be the chunk's own full URL (member form), and the
+listing's the `chunks/` container URL -- the same exact-match target rule that
+governs every PWS URL (see [[PWS-AUTHZ]]). For a read, the governing
+access-control policy is the parent resource's: a chunk exposes a fragment of
+the same content the resource holds, so whoever may read the resource may read
+its chunks, and the maximum-privacy `not-found` rule applies to a chunk
+exactly as to the resource.
+
+### Chunked envelopes {#chunked-envelopes}
+
+A large or streamed document is stored as chunks. The [=envelope=] stays the
+resource's own content and carries the extent of the stream; each chunk
+carries one sealed fragment.
+
+1. The client writes the document envelope first, as an ordinary resource.
+   This satisfies the [[[#store-chunk-operation]]] rule that the parent
+   resource must exist before any of its chunks. The envelope's plaintext
+   document declares `meta.encoding` `"chunked"`
+   ([[[#plaintext-document]]]) and seals its `stream` state, so a reader can
+   learn the extent of the stream from the document alone.
+2. For each chunk `i` in `0 .. chunks - 1`, the client serializes the [[EDV]]
+   chunk object `{ index, offset, sequence, jwe }` to JSON and `PUT`s it to
+   chunk index `i` under the `application/octet-stream` content type. The
+   octet-stream type is deliberate: it routes the chunk through the server's
+   raw-binary write path, bounded by the backend's `maxUploadBytes` (tens of
+   MiB) rather than by the much smaller body-size limit servers typically
+   impose on JSON-parsed requests (the reference server's is 1 MiB), which a
+   full encrypted chunk would exceed. The server stores the bytes verbatim and
+   never parses them, so a reader decodes and parses the chunk object back
+   client-side.
+3. A reader fetches the document envelope, decrypts it, reads `stream.chunks`,
+   fetches chunk indexes `0 .. chunks - 1` ([[[#read-chunk-operation]]]), and
+   decrypts each `jwe` client-side to reassemble the stream.
+
+The `stream` member of a chunked document's plaintext
+([[[#plaintext-document]]]) is a JSON object carrying the extent of the
+stream:
+
+* `chunks` (REQUIRED once the stream is complete) - The total number of chunks
+  the stream occupies, a non-negative integer. A reader reads indexes `0`
+  through `chunks - 1`.
+* `sequence` (OPTIONAL) - The envelope's own `sequence` at the write that
+  recorded the chunk count. Carried, and not enforced by the server
+  ([[[#stored-envelope]]]).
+* `pending` (OPTIONAL) - `true` on the reserve write of the two-step sequence
+  above, where the envelope exists but its chunk count is not yet known. A
+  reader that meets `pending` with no `chunks` MUST refuse the document as
+  incomplete rather than read zero chunks.
+
+The reassembled stream's media type is the document's own `meta.contentType`
+([[[#plaintext-document]]]); `stream` carries no content type of its own. The
+chunks of a stream belong to the resource whose envelope declares them: the
+envelope's `id`, bound into the AEAD as `pws.resource` ([[[#pws-binding]]]),
+is the resource whose chunk address ([[[#chunk-address]]]) holds them. A
+reader MUST read a stream's chunks from that resource and from no other.
+
+<div class="note" title="Security consideration: stream integrity">
+The chunk framing above authenticates the bytes of each chunk (each `jwe` is
+an AEAD ciphertext) but does not authenticate a chunk's position in the stream
+or the stream's total length: the index, offset, and count are carried in
+plaintext framing and in the individually authenticated, uncross-linked chunk
+objects. A malicious server that reorders, drops, duplicates, or truncates
+chunks is therefore not reliably detectable by the client with this framing. A
+hardened framing -- a per-stream authenticated header, an index-bound AAD on
+each chunk, and an authenticated total length, in the manner of a
+Cryptomator-style file header -- closes this gap and is planned upstream in
+[[EDV]]. When it lands, this profile will adopt it under a new scheme
+`version`. Until then, a deployment that does not trust its storage provider
+for availability and ordering integrity SHOULD treat streamed documents
+accordingly.
+</div>
+
 ## The blinded index {#blinded-index}
 
 An [=encrypted collection=] MAY be [=indexable=]: selected attributes
@@ -761,9 +1247,10 @@ entries envelopes carry ([[[#indexed-entries]]],
 are the server-visible half, defined by [[PWS]]'s [`blinded-index`
 query
 profile](https://w3c-ccg.github.io/wallet-attached-storage-spec/#query-profile-blinded-index).
-Serving queries is a server feature (the `blinded-index-query`
-backend feature of [[PWS]]); an indexable collection stored on a
-server without it is fully functional, merely unqueryable remotely.
+The server serves that half only where its [=version entry=] for this
+profile carries the `blinded-index-query` token ([[[#feature-tokens]]]). An
+indexable collection stored on a server that lists no such token is fully
+functional, merely unqueryable remotely.
 
 ### The blinding key {#blinding-key}
 
@@ -1108,6 +1595,14 @@ Under the log form:
   consumer acts only on a projection equal to the verified head's `state`
   after stripping `history` -- the one member the projection carries and
   an entry's `state` never does ([[[#log-resource]]]).
+
+The log form's server-side half -- serving the collection's `meta/log`
+sub-resource and deriving the governed `encryption` member from its verified
+head -- is served only where the server's [=version entry=] for this profile
+carries the `governed-history-logs` token ([[[#feature-tokens]]]). A writer
+MUST consult the token before choosing a framing, since the two are written
+through different endpoints. A deployment on a server without the token keeps
+point state and the client-held epoch pin ([[[#epoch-integrity]]]).
 
 Nothing in this profile's epoch rules depends on which framing carries
 the descriptor; a deployment adopts the log form per collection.
@@ -1518,12 +2013,10 @@ Appending is linearized by the host's compare-and-swap (CAS) primitive
 itself carries no consensus mechanism, and none is needed: concurrent writers
 produce a CAS conflict as opposed to a fork.
 
-Conditional writes are an optional feature in [[PWS]]. A host serving
-resource logs MUST support them: the backend holding the log MUST advertise
-the `conditional-writes` feature, and a writer MUST NOT fall back to an
-unconditional write against a backend that does not. Without the
-precondition, concurrent appends silently overwrite one another instead of
-failing into the retry loop below.
+Conditional writes are a baseline requirement of [[PWS]], so every host
+serving resource logs supports them. A writer MUST NOT fall back to an
+unconditional write: without the precondition, concurrent appends silently
+overwrite one another instead of failing into the retry loop below.
 
 A writer MUST:
 
@@ -1900,6 +2393,29 @@ strings, key-name strings),
 each with its value and the artifact class it is baked into. Changing any
 registered value orphans every artifact derived under it.
 </div>
+
+## What this profile does not provide {#limitations}
+
+Relative to a dedicated Encrypted Data Vault server, this profile reaches
+parity for the affordances a given server advertises. These limitations
+remain:
+
+* Server-side blinded-index query and `unique: true` enforcement require a
+  server whose [=version entry=] carries `blinded-index-query`
+  ([[[#feature-tokens]]]). Without it, a client cannot query blinded
+  attributes at the server or rely on it to enforce uniqueness. It must
+  fetch and filter client-side -- or, as the reference codec does, mint
+  content-derived document ids and keep all searchable metadata inside the
+  envelope -- and a uniqueness constraint is at best a racy client-side
+  read-then-write.
+* The chunk framing does not authenticate a chunk's position in a stream or
+  the stream's total length, so a storage provider that reorders, drops,
+  duplicates, or truncates chunks is not reliably detectable (see the
+  security consideration in [[[#chunked-envelopes]]]).
+
+For a small single-writer collection (a credential wallet, say) these rarely
+matter. A large or multi-writer collection wants a server that carries the
+`blinded-index-query` token.
 
 ## Security considerations {#security-considerations}
 
