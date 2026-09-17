@@ -101,8 +101,18 @@
     collections. The exception is
     <a href="#chunked-resources">Chunked resources</a>, which defines an HTTP
     surface. A server that implements this profile serves the chunk
-    endpoints. They are not advertised by a feature token, and a server that
-    does not implement this profile MAY omit them.
+    endpoints, and a server that does not implement this profile MAY omit
+    them.
+  </p>
+  <p>
+    A server declares which profiles it implements in its PWS service
+    description. A version entry listed under this profile's identifier,
+    <code>https://w3id.org/pws/encrypted-collections</code>, claims
+    conformance to the chunk endpoints at that version; the two feature
+    tokens such an entry may carry claim the optional affordances of
+    <a href="#feature-tokens">Feature tokens</a>. Everything else this
+    profile defines is client-side, so a server lists no entry for it and
+    still stores an encrypted collection's envelopes.
   </p>
 </section>
 

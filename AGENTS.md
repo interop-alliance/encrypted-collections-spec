@@ -4,9 +4,10 @@ This repo is the **PWS Encrypted Collections (PWS-EC)** specification, a W3C
 CCG-style document authored in **ReSpec + Markdown**. It defines the
 client-side encrypted-collection construction over Portable Web Spaces:
 the encryption descriptor with its key-epoch roster (carried from the
-collection's creation -- the single epoch era), the EDV envelope format with
-the AEAD-bound `pws` binding, epoch-configuration integrity (the epoch
-pin and the log form), the resource log profile (the hash-linked,
+collection's creation -- the single epoch era), this profile's persistent
+identifier and the service-description entry a server lists it under, the EDV
+envelope format with the AEAD-bound `pws` binding, epoch-configuration
+integrity (the epoch pin and the log form), the resource log profile (the hash-linked,
 externally authorized log form under which descriptors and key rosters
 are co-managed, extracted from did:webvh),
 recipient management, deferred minting for local-first writers, and the
@@ -83,7 +84,11 @@ Match the existing style (same conventions as the app-connect-spec repo):
   registry, and the resource log constants (the `resource-log:0.1`
   format identifier, the `{SCID}` placeholder, the bare-base58btc
   SHA-256 multihash entry hash, the `eddsa-jcs-2022` / `assertionMethod`
-  proof shape) are baked into stored artifacts. Verify against code
+  proof shape), and this profile's persistent identifier
+  `https://w3id.org/pws/encrypted-collections` with its `blinded-index-query`
+  and `governed-history-logs` feature tokens (see
+  [decisions/0003](decisions/0003-profile-identifier-and-feature-tokens.md))
+  are baked into stored artifacts and served documents. Verify against code
   before changing a single character.
 - **The resource log profile lives here, not in App Connect.** Its only
   normative dependency is the controller document; the mention of enrolled
@@ -131,6 +136,15 @@ construction is named as such in each implementing package's CHANGELOG.
   one `NNNN-slug.md` file per decision; the convention and template are
   canonical in
   [isomorphic-lib-template's `decisions/`](https://github.com/interop-alliance/isomorphic-lib-template/tree/main/decisions).
+- Open work items for this spec live in [_spec/ROADMAP.md](_spec/ROADMAP.md)
+  as `ECS-N` items; shipped items move to the archive beside it so ids
+  keep resolving. An item is filed in the roadmap of the repo whose document
+  it changes: work on PWS core, its authorization profile, or App Connect goes in those repos' roadmaps, not here. An item
+  moved between roadmaps keeps its old id in the source archive with a
+  pointer to the new one. The item format and the `touches:` rule are
+  canonical in
+  [isomorphic-lib-template's AGENTS.md](https://github.com/interop-alliance/isomorphic-lib-template/blob/main/AGENTS.md)
+  ("Roadmap & Task Conventions").
 
 ## Reference material (read-only, outside this repo)
 

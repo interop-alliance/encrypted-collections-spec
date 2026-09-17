@@ -9,7 +9,7 @@ cryptographic meaning, and a storage server never holds key material.
 
 The profile is almost entirely a client-side convention layered on the PWS
 storage substrate. For everything but large documents, a conforming PWS
-server needs nothing beyond the features it already advertises: it stores
+server needs nothing beyond its baseline surface: it stores
 opaque envelopes, validates their non-secret shape (the `edv` scheme of the
 PWS [Encryption Scheme
 Registry](https://w3c-ccg.github.io/wallet-attached-storage-spec/#encryption-scheme-registry)),
@@ -22,12 +22,13 @@ This profile also defines one HTTP surface of its own: the chunk endpoints of
 [[[#chunked-resources]]], the substrate a large or streamed document is
 stored on. A JWE is sealed as one unit in memory, so a large stream is cut
 into bounded envelopes; the chunk endpoints are where those envelopes live.
-Serving them is required of a server that implements this profile, and no
-feature token advertises them.
+Serving them is required of a server that implements this profile, so the
+server's [=version entry=] for this profile is itself their advertisement
+([[[#service-description]]]) and no feature token names them.
 
 | Specification                                                  | Relationship                                                                                                                                                                                                                                                                                                                                                                           |
 |----------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| [[PWS]]                                                        | The storage substrate: Spaces, Collections, Resources, the `encryption` descriptor slot, the Encryption Scheme Registry's `edv` envelope validation, conditional writes, the `changes` feed. This profile's server-visible halves ([descriptor shape validation](https://w3c-ccg.github.io/wallet-attached-storage-spec/#epoch-data-model), the epoch stamp surfaces, the [`blinded-index` query profile](https://w3c-ccg.github.io/wallet-attached-storage-spec/#query-profile-blinded-index) with its unique-attribute enforcement) are defined there.                                                                                |
+| [[PWS]]                                                        | The storage substrate: Spaces, Collections, Resources, the `encryption` descriptor slot, the Encryption Scheme Registry's `edv` envelope validation, conditional writes, the `changes` feed, and the service description this profile's [=version entry=] is listed in ([[[#service-description]]]). This profile's server-visible halves ([descriptor shape validation](https://w3c-ccg.github.io/wallet-attached-storage-spec/#epoch-data-model), the epoch stamp surfaces, the [`blinded-index` query profile](https://w3c-ccg.github.io/wallet-attached-storage-spec/#query-profile-blinded-index) with its unique-attribute enforcement) are defined there.                                                                                |
 | [[PWS-AUTHZ]]                                                  | The baseline PWS authorization profile: zCaps over HTTP Signatures, the exact-match `invocationTarget` rule, and the `Digest` request-body integrity header. Cited by [[[#chunk-authorization]]]. |
 | [[APP-CONNECT]]                                                | The companion profile by which an application obtains capabilities into a wallet's Space. It defers to this profile for the encrypted-collection construction: the epoch roster, the envelope format, recipient-key derivation, the definition of an epoch-roster recipient, and the [=resource log=] profile under which its enrolled clients co-manage key resources ([[[#resource-log-profile]]]). |
 | [[DID-WEBVH]]                                                  | The log format the [=resource log=] profile is extracted from ([[[#log-webvh]]]), and one method a Space controller's [=controller document=] may be verified under. Nothing outside that profile depends on it. |
@@ -226,6 +227,92 @@ acceptance branch for either anywhere in the profile:
   [Space](https://w3c-ccg.github.io/wallet-attached-storage-spec/#spaces)
   [[PWS]].</dd>
 </dl>
+
+## Service description {#service-description}
+
+A server tells clients which specifications it speaks through the PWS
+[service description](https://w3c-ccg.github.io/wallet-attached-storage-spec/#service-description):
+a server-wide JSON document whose `specs` member maps each specification's
+persistent identifier to the versions of it the server implements. This
+section declares this profile's identifier and defines the [=version entry=]
+a server lists under it.
+
+### This profile's identifier {#spec-identifier}
+
+The persistent identifier of this specification is
+`https://w3id.org/pws/encrypted-collections`.
+
+That string is the `specs` key a server lists this profile under. It names
+the specification, not the document's current location, and it never carries
+a version -- the [=version entries=] under the key carry those. Clients
+compare the key as an opaque string, with no URL normalization.
+
+### The version entry {#version-entry}
+
+A <dfn data-lt="version entries">version entry</dfn> under this profile's
+identifier is a JSON object with the members [[PWS]] defines for every entry,
+plus this profile's `features` array:
+
+* `version` (REQUIRED) - The version of this profile the server implements,
+  a bare `major.minor` string. This document is version `0.1`.
+* `url` (OPTIONAL) - The URL of this document at exactly that version.
+* `features` (OPTIONAL) - An array of feature tokens from
+  [[[#feature-tokens]]], naming the optional affordances of this profile the
+  server serves. An absent array means the same as an empty one: the server
+  serves neither affordance.
+
+An entry means the server conforms to this profile's required server-visible
+surface at that version. That surface is the chunk endpoints of
+[[[#chunked-resources]]]: a server that lists this profile serves them, and
+no feature token advertises them separately ([[[#chunked-resources]]]). The
+rest of this profile binds clients, so there is nothing else for the entry to
+claim.
+
+A server that does not implement this profile lists no entry under the
+identifier. A client that finds none MUST NOT infer that encrypted
+collections are unavailable -- the construction is client-side, and a
+baseline PWS server stores its envelopes -- only that the chunk endpoints and
+both affordances below are absent.
+
+Example: the `specs` member of a service description, for a server serving
+both affordances (other keys elided):
+
+```json
+{
+  "specs": {
+    "https://w3id.org/pws/encrypted-collections": [
+      {
+        "version": "0.1",
+        "url": "https://interop-alliance.github.io/encrypted-collections-spec/",
+        "features": ["blinded-index-query", "governed-history-logs"]
+      }
+    ]
+  }
+}
+```
+
+### Feature tokens {#feature-tokens}
+
+Two affordances of this profile are optional, each because the profile
+defines a way to work without it. Each is advertised by one token:
+
+* <dfn data-lt="blinded-index-query">`blinded-index-query`</dfn> - The
+  server serves the `blinded-index` query profile of [[PWS]] over a
+  collection's blinded tokens, and enforces the `unique` attribute
+  constraint. Without it a client fetches and filters locally, and a
+  uniqueness constraint is at best a racy client-side read-then-write
+  ([[[#blinded-index]]], [[[#limitations]]]).
+* <dfn data-lt="governed-history-logs">`governed-history-logs`</dfn> - The
+  server serves a collection's `meta/log` sub-resource and derives the
+  governed `encryption` member of the collection's Metadata object from that
+  log's head entry. This is the server side of the log form of an
+  [=encryption descriptor=] ([[[#log-form]]]). Without it a deployment stays
+  on point state and gets its epoch-configuration integrity from the
+  client-held epoch pin ([[[#epoch-integrity]]]).
+
+The token vocabulary is open and additive. A client MUST ignore a token it
+does not recognize, and MUST treat an absent token as "not supported"; it
+MUST NOT infer support for one affordance from the presence of the other.
 
 ## The encryption descriptor {#descriptor}
 
@@ -775,10 +862,11 @@ capability (fetch axis) status.
 
 <div class="note">
 This section defines an HTTP surface, not a client-side convention. Serving
-the chunk endpoints is required of a server that implements this profile. No
-feature token advertises them: chunk support is blob CRUD under a sub-path,
-and an encrypted collection that never stores a large document simply never
-uses it.
+the chunk endpoints is required of a server that implements this profile, so
+a [=version entry=] under this profile's identifier is what advertises them
+([[[#version-entry]]]) and no feature token names them: chunk support is blob
+CRUD under a sub-path, and an encrypted collection that never stores a large
+document simply never uses it.
 </div>
 
 A [=resource=] MAY carry an ordered set of [=chunks=]: opaque byte sequences,
@@ -1159,9 +1247,10 @@ entries envelopes carry ([[[#indexed-entries]]],
 are the server-visible half, defined by [[PWS]]'s [`blinded-index`
 query
 profile](https://w3c-ccg.github.io/wallet-attached-storage-spec/#query-profile-blinded-index).
-Serving queries is a server feature (the `blinded-index-query`
-backend feature of [[PWS]]); an indexable collection stored on a
-server without it is fully functional, merely unqueryable remotely.
+The server serves that half only where its [=version entry=] for this
+profile carries the `blinded-index-query` token ([[[#feature-tokens]]]). An
+indexable collection stored on a server that lists no such token is fully
+functional, merely unqueryable remotely.
 
 ### The blinding key {#blinding-key}
 
@@ -1506,6 +1595,14 @@ Under the log form:
   consumer acts only on a projection equal to the verified head's `state`
   after stripping `history` -- the one member the projection carries and
   an entry's `state` never does ([[[#log-resource]]]).
+
+The log form's server-side half -- serving the collection's `meta/log`
+sub-resource and deriving the governed `encryption` member from its verified
+head -- is served only where the server's [=version entry=] for this profile
+carries the `governed-history-logs` token ([[[#feature-tokens]]]). A writer
+MUST consult the token before choosing a framing, since the two are written
+through different endpoints. A deployment on a server without the token keeps
+point state and the client-held epoch pin ([[[#epoch-integrity]]]).
 
 Nothing in this profile's epoch rules depends on which framing carries
 the descriptor; a deployment adopts the log form per collection.
@@ -1916,12 +2013,10 @@ Appending is linearized by the host's compare-and-swap (CAS) primitive
 itself carries no consensus mechanism, and none is needed: concurrent writers
 produce a CAS conflict as opposed to a fork.
 
-Conditional writes are an optional feature in [[PWS]]. A host serving
-resource logs MUST support them: the backend holding the log MUST advertise
-the `conditional-writes` feature, and a writer MUST NOT fall back to an
-unconditional write against a backend that does not. Without the
-precondition, concurrent appends silently overwrite one another instead of
-failing into the retry loop below.
+Conditional writes are a baseline requirement of [[PWS]], so every host
+serving resource logs supports them. A writer MUST NOT fall back to an
+unconditional write: without the precondition, concurrent appends silently
+overwrite one another instead of failing into the retry loop below.
 
 A writer MUST:
 
@@ -2306,8 +2401,8 @@ parity for the affordances a given server advertises. These limitations
 remain:
 
 * Server-side blinded-index query and `unique: true` enforcement require a
-  server that advertises the `blinded-index-query` affordance
-  ([[[#blinded-index]]]). Without it, a client cannot query blinded
+  server whose [=version entry=] carries `blinded-index-query`
+  ([[[#feature-tokens]]]). Without it, a client cannot query blinded
   attributes at the server or rely on it to enforce uniqueness. It must
   fetch and filter client-side -- or, as the reference codec does, mint
   content-derived document ids and keep all searchable metadata inside the
@@ -2319,8 +2414,8 @@ remain:
   security consideration in [[[#chunked-envelopes]]]).
 
 For a small single-writer collection (a credential wallet, say) these rarely
-matter. A large or multi-writer collection wants a server that advertises the
-blinded-index affordance.
+matter. A large or multi-writer collection wants a server that carries the
+`blinded-index-query` token.
 
 ## Security considerations {#security-considerations}
 
